@@ -1,0 +1,37 @@
+# POLIT Difficulty Mode Configuration
+
+[story]
+description = "Learn the systems. Reduced DCs, forgiving NPCs, extra AP."
+dc_modifier = -3
+ap_bonus = 2
+npc_grudge_decay = 0.5    # grudges fade faster
+scandal_frequency = 0.5   # half as many scandals
+economy_volatility = 0.5
+allow_reload = true
+
+[standard]
+description = "Balanced challenge. Single autosave, fair dice."
+dc_modifier = 0
+ap_bonus = 0
+npc_grudge_decay = 1.0
+scandal_frequency = 1.0
+economy_volatility = 1.0
+allow_reload = false
+
+[ironman]
+description = "No reloads. Harsher consequences. Grudges last longer."
+dc_modifier = 1
+ap_bonus = 0
+npc_grudge_decay = 1.5    # grudges last 50% longer
+scandal_frequency = 1.2
+economy_volatility = 1.2
+allow_reload = false
+
+[nightmare]
+description = "Hostile media. Frequent scandals. Volatile economy. Scheming NPCs."
+dc_modifier = 3
+ap_bonus = -1
+npc_grudge_decay = 2.0
+scandal_frequency = 2.0
+economy_volatility = 2.0
+allow_reload = false

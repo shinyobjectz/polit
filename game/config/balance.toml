@@ -1,0 +1,52 @@
+# POLIT Game Balance Configuration
+
+[action_points]
+# Base AP by office level
+local = 5
+state = 7
+federal_house = 8
+federal_senate = 9
+governor = 9
+president = 12
+bureaucratic_low = 5
+bureaucratic_high = 8
+
+[action_costs]
+meet_in_person = 2
+phone_call = 1
+speech = 1
+campaign = 2
+draft_legislation = 0    # drafting is free (creative time)
+research = 1
+scheme = 2
+press_conference = 1
+
+[dice]
+sides = 20
+crit_success = 20
+crit_failure = 1
+
+[cards]
+max_deck_size = 30
+evolution_threshold = 10   # plays before card can evolve
+neglect_threshold = 20     # weeks unused before degradation
+
+[coherence]
+principled_threshold = 5
+flipflopper_threshold = -3
+
+[stress]
+crisis_stress = 10
+scandal_stress = 15
+overwork_threshold = 80    # stress above this = negative modifiers
+burnout_threshold = 95     # forced reduced AP
+
+[economy]
+# Simulation tick parameters
+policy_lag_weeks_min = 2
+policy_lag_weeks_max = 8
+
+[elections]
+campaign_weeks_primary = 12
+campaign_weeks_general = 12
+incumbent_advantage = 5    # percentage points

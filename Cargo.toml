@@ -1,0 +1,72 @@
+[package]
+name = "polit"
+version = "0.1.0"
+edition = "2021"
+description = "The American Politics Simulator"
+license = "MIT"
+
+[dependencies]
+# ECS Engine
+bevy_ecs = "0.15"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Database
+rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
+
+# Graph
+petgraph = "0.6"
+
+# Scripting
+rhai = "1.20"
+
+# Threading
+crossbeam-channel = "0.5"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Utilities
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+
+# HTTP (data pipeline)
+reqwest = { version = "0.12", features = ["json"], optional = true }
+
+# Audio (optional)
+# cpal = { version = "0.15", optional = true }
+# whisper-rs = { version = "0.12", optional = true }
+# hound = { version = "3.5", optional = true }
+
+[dependencies.tempfile]
+version = "3"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+data-pipeline = ["reqwest"]
+# audio = ["cpal", "whisper-rs", "hound"]
+# gpu-cuda = []
+# gpu-metal = []
+
+[[bench]]
+name = "simulation"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

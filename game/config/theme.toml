@@ -1,0 +1,28 @@
+# POLIT UI Theme Configuration
+# Colors use RGB hex values or named colors
+
+[status_bar]
+bg = "#1E1E28"
+fg = "#FFFFFF"
+title_bg = "#FFFFFF"
+title_fg = "#000000"
+
+[chat]
+narration = "#FFFFFF"
+npc_dialogue = "#00D7FF"
+player_input = "#00FF87"
+system_event = "#FFD700"
+warning = "#FF5555"
+success = "#50FA7B"
+dice_roll = "#FF79C6"
+phase_header = "#FFFFFF"
+
+[overlay]
+bg = "#0F0F19"
+border = "#00D7FF"
+title = "#FFFFFF"
+
+[input]
+prompt = "#00FF87"
+cursor = "#FFFFFF"
+hint = "#666666"
