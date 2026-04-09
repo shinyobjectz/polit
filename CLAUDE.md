@@ -13,7 +13,7 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 | [Core Architecture](docs/gdd/01-core-architecture/README.md) | `01-core-architecture/` | bevy_ecs, event bus, RocksDB column families, project structure, async threads |
 | [Game Loop](docs/gdd/02-game-loop/README.md) | `02-game-loop/` | Dawn/Action/Event/Dusk phases, AP economy, D20 dice, phase state machine |
 | [Deckbuilder](docs/gdd/03-deckbuilder/README.md) | `03-deckbuilder/` | Tactic/Asset/Position cards, flip-flop coherence, card evolution, rarity |
-| [AI Harness](docs/gdd/04-ai-harness/README.md) | `04-ai-harness/` | Gemma 4 via Candle, 15 DM tools, context budget (~5k tokens), editable prompts |
+| [AI Harness](docs/gdd/04-ai-harness/README.md) | `04-ai-harness/` | Gemma via mistral.rs, 15 DM tools, GBNF grammar, context budget (~10k tokens), editable prompts |
 | [Economic Simulation](docs/gdd/05-economic-simulation/README.md) | `05-economic-simulation/` | 4-layer model (surface→macro→demographic→geopolitical), policy causality chains |
 | [NPC & Social Graph](docs/gdd/06-npc-social-graph/README.md) | `06-npc-social-graph/` | petgraph network, Big Five personality, reputation propagation, staff system, family |
 | [Law Engine](docs/gdd/07-law-engine/README.md) | `07-law-engine/` | 5 enforcement types, legislative process, constitutional supremacy, RAG-based interpretation |
@@ -22,7 +22,7 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 | [Freeform Action Engine](docs/gdd/10-freeform-action-engine/README.md) | `10-freeform-action-engine/` | Custom events, DM improvisation, self-extending SDK, Rhai script generation |
 | [Modding & SDK](docs/gdd/11-modding-sdk/README.md) | `11-modding-sdk/` | 6 mod types, 40+ hook points, Rhai API, SDK CLI, total conversion support |
 | [Data Pipeline](docs/gdd/12-data-pipeline/README.md) | `12-data-pipeline/` | FRED/Census/BLS/BEA/Wikipedia APIs, 5 game start modes, fact-checking system |
-| [Audio](docs/gdd/13-audio/README.md) | `13-audio/` | Voice input via Gemma 4 native audio, optional TTS, speech gameplay modifiers |
+| [Audio](docs/gdd/13-audio/README.md) | `13-audio/` | Voice input via whisper-rs STT, optional TTS, speech gameplay modifiers |
 | [Game Design Principles](docs/gdd/14-game-design-principles/README.md) | `14-game-design-principles/` | 6 pillars, emergent scenarios, roguelike DNA, anti-stagnation systems |
 | [News & Information](docs/gdd/15-news-information/README.md) | `15-news-information/` | Information entities, knowledge graph, media orgs, news cycles, cross-system effects |
 | [Corporate System](docs/gdd/16-corporate-system/README.md) | `16-corporate-system/` | Sector interest tables, action/reaction matrix, lobbying, campaign finance, foreign influence |
@@ -44,12 +44,12 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 ## Key Technical Decisions
 
 - **Engine**: bevy_ecs (without renderer) + plugin-style extensibility
-- **AI**: Gemma 4 via Candle (local inference, supports audio input on E2B/E4B)
+- **AI**: Gemma 12B-it (recommended) via mistral.rs (local GGUF inference, OpenAI-compatible tool calling, grammar-constrained JSON output)
 - **Database**: RocksDB with column families per domain, snapshot-based saves
 - **UI**: Ratatui + Crossterm, chat-forward with floating overlays
 - **Scripting**: Rhai (sandboxed, for moddable game logic)
 - **Graph**: petgraph for social network computation
-- **Audio**: cpal for I/O, Gemma 4 native audio processing
+- **Audio**: cpal for I/O, whisper-rs for local STT (speech-to-text), optional system TTS
 
 ## Code Conventions
 

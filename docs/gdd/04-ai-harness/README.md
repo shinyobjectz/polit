@@ -1,42 +1,96 @@
 ---
-title: AI Harness & Gemma 4 Integration
+title: AI Harness & Gemma Integration
 section: 04
 status: design-complete
 depends_on: [01]
 blocks: [10, 13]
 ---
 
-# AI Harness & Gemma 4 Integration
+# AI Harness & Gemma Integration
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Context Builder                    │
-│  World State → compressed summary of current sim    │
-│  Character Info → player stats, cards, relationships│
-│  Scene Context → what's happening right now         │
-│  NPC Profiles → relevant characters + memories      │
-│  Tone Prompt → loaded from editable .toml file      │
-│  History Window → recent events + conversation buf  │
-└───────────────────────┬─────────────────────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│              Gemma 4 (via Candle)                    │
-│  Model: gemma-4-E2B/E4B (edge) or 27B (full)       │
-│  Input: text + optional audio                       │
-│  Output: structured JSON via tool-calling format    │
-└───────────────────────┬─────────────────────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│                   Tool Router                        │
-│  Parses AI tool calls → ECS commands                │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   AI HARNESS                             │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │              Context Builder                      │   │
+│  │  World State → compressed summary of current sim  │   │
+│  │  Character Info → player stats, cards, rels       │   │
+│  │  Scene Context → what's happening right now       │   │
+│  │  NPC Profiles → relevant characters + memories    │   │
+│  │  Tone Prompt → loaded from editable .toml file    │   │
+│  │  History Window → recent events + conversation    │   │
+│  └───────────────────────┬─────────────────────────┘   │
+│                          │                              │
+│         ┌────────────────┼────────────────┐             │
+│         │ TEXT INPUT      │ AUDIO INPUT    │             │
+│         │ (player types)  │ (player speaks)│             │
+│         │                │      │         │             │
+│         │                │  ┌───▼───────┐ │             │
+│         │                │  │ whisper-rs │ │             │
+│         │                │  │ (STT)     │ │             │
+│         │                │  └───┬───────┘ │             │
+│         │                │      │ text    │             │
+│         └────────────────┼──────┘         │             │
+│                          ▼                              │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │              mistral.rs                           │   │
+│  │                                                   │   │
+│  │  Model: Gemma 12B-it GGUF Q4_K_M (recommended)  │   │
+│  │  Tool calling: OpenAI-compatible format           │   │
+│  │  Constrained decoding: GBNF grammar               │   │
+│  │  Output: guaranteed valid JSON tool calls         │   │
+│  │  Streaming: token-by-token for typewriter effect  │   │
+│  └───────────────────────┬─────────────────────────┘   │
+│                          │                              │
+│  ┌───────────────────────▼─────────────────────────┐   │
+│  │              Tool Router                          │   │
+│  │  Parses tool calls → ECS commands                │   │
+│  │  JSON parsing trivial — mistral.rs guarantees    │   │
+│  │  valid output via grammar-constrained decoding   │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Why mistral.rs (not raw Candle or llama.cpp)
+
+| Feature | Candle | llama-cpp-2 | mistral.rs |
+|---------|--------|-------------|------------|
+| Gemma support | Flaky, open issues | Via GGUF (when supported) | Full native support |
+| Tool calling | DIY | Via GBNF grammar (manual) | Built-in, OpenAI-compatible |
+| Structured output | DIY | GBNF grammar | Grammar-constrained decoding |
+| Streaming | Basic iterator | Yes | Full streaming API |
+| Quantization | Manual | GGUF native | GGUF/GPTQ native |
+| Embeddable | Tensor library (low-level) | C++ bindings | High-level Rust API |
+| KV-cache | Basic | Managed | Managed automatically |
+
+**mistral.rs eliminates the need to build**: tool call parser, JSON validator, KV-cache manager, constrained decoder. The `ai/harness.rs` module goes from ~2000 lines of custom inference code to ~200 lines of API calls.
+
+## Inference Pipeline
+
+### Audio Input Path
+```
+Microphone → cpal (capture) → PCM audio → whisper-rs (STT) → text
+```
+Audio is always converted to text before reaching the LLM. Speech analysis for gameplay bonuses (delivery, tone, pacing) is performed by the LLM via text description of audio characteristics, not raw audio processing.
+
+### Text Processing Path
+```
+Context Builder → system prompt + user text → mistral.rs → tool call JSON → Tool Router → ECS commands
+```
+
+### Streaming Output
+```
+mistral.rs generates tokens → streamed to UI thread via crossbeam channel → 
+Ratatui renders typewriter effect → hides inference latency
 ```
 
 ## DM Tool Suite
 
-The AI dungeon master affects the game world through structured tool calls:
+The AI dungeon master affects the game world through structured tool calls. mistral.rs uses OpenAI-compatible tool calling format with GBNF grammar constraints to guarantee valid JSON.
 
 | Tool | Purpose |
 |------|---------|
@@ -56,6 +110,15 @@ The AI dungeon master affects the game world through structured tool calls:
 | `end_scene()` | Close current interaction |
 | `score_adjust()` | Modify player metrics |
 
+### GBNF Grammar for Tool Calls
+
+mistral.rs supports GBNF (GGML BNF) grammar to constrain output. We define a grammar that only allows valid tool call JSON matching our schema. This eliminates malformed tool calls entirely — no retry logic needed.
+
+```
+root   ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws "{" ws args ws "}" ws "}"
+tool-name ::= "\"narrate\"" | "\"spawn_npc\"" | "\"set_dc\"" | ...
+```
+
 ## DM Operating Modes
 
 ### Narrator Mode
@@ -65,7 +128,7 @@ Between actions. Generates weekly briefings, describes consequences.
 
 ### Conversation Mode
 Player talking to NPCs (1-on-1 or group).
-- Input: NPC profiles + relationship history + player text/audio
+- Input: NPC profiles + relationship history + player text
 - Output: `narrate()` for dialogue, `modify_rel()`, `set_mood()`, `grant_card()`/`revoke_card()`, `roll_dice()`
 
 ### Dungeon Master Mode
@@ -82,23 +145,35 @@ Checking whether actions comply with or are affected by active laws.
 
 ### Context Budget (per inference call)
 
-| Component | ~Tokens |
-|-----------|---------|
-| System prompt (tone + rules) | 500 |
-| World summary (compressed sim state) | 1000 |
-| Active scene | 500 |
-| Relevant NPCs (max 5 × ~200) | 1000 |
-| Conversation buffer (recent dialogue) | 1500 |
-| Tool definitions | 500 |
-| **Total** | **~5000** |
+With 128K context available on Gemma 12B+, we can afford much richer context than originally planned:
+
+| Component | Tokens | Notes |
+|-----------|--------|-------|
+| System prompt (tone + rules) | 1,000 | Includes tool definitions |
+| World summary (compressed sim state) | 2,000 | Economy, politics, active crises |
+| Active scene | 1,000 | Current situation detail |
+| Relevant NPCs (max 5 × ~400) | 2,000 | Personality, memories, relationship |
+| Conversation buffer | 3,000 | Recent dialogue with summaries of older |
+| Active laws (RAG-retrieved, if relevant) | 1,000 | Only when law interpretation needed |
+| **Total budget** | **~10,000** | Well within 128K, leaves headroom |
 
 ### Strategy
 
-- Aggressive summarization + RAG retrieval
+- Aggressive summarization + RAG retrieval from RocksDB
 - Full NPC memories stored in RocksDB, retrieved on-demand when NPC enters scene
-- World state compressed by a dedicated summarizer pass
+- World state compressed by a dedicated summarizer pass (can itself be an LLM call during downtime)
 - Conversation history sliding window with summary of older exchanges
-- KV-cache reuse between calls via Candle
+- KV-cache managed automatically by mistral.rs between calls
+
+## Model Selection
+
+| Tier | Model | GGUF Quant | VRAM/RAM | Speed (Apple Silicon) | Speed (RTX 4090) |
+|------|-------|-----------|----------|----------------------|-------------------|
+| Budget | Gemma 4B-it | Q8_0 | ~5 GB | ~45 tok/s | ~100 tok/s |
+| **Recommended** | **Gemma 12B-it** | **Q4_K_M** | **~8 GB** | **~20-35 tok/s** | **~50-65 tok/s** |
+| Enthusiast | Gemma 27B-it | Q4_K_M | ~18 GB | ~18 tok/s | ~25-35 tok/s |
+
+**12B Q4 is the sweet spot.** At 20-35 tok/s on Apple Silicon, a 200-token DM response takes 6-10 seconds — acceptable with streaming typewriter effect. Tool calling is reliable at 12B+. The 4B model works for gameplay but tool calling becomes unreliable — labeled "Lite Mode" in settings.
 
 ## Editable Prompt System
 
@@ -111,7 +186,7 @@ game/prompts/
 └─ event_templates/      narrative templates for event types
 ```
 
-All TOML — human-readable, moddable, version-controllable. Players can edit tone.toml to change the entire narrative personality.
+All TOML — human-readable, moddable, version-controllable.
 
 ## DM Behavioral Rules
 
@@ -121,7 +196,7 @@ All TOML — human-readable, moddable, version-controllable. Players can edit to
 - Set appropriate DCs based on context
 - Build custom event frameworks when player goes off-script
 - Weave player actions into coherent ongoing narrative
-- Foreshadow consequences ("Martinez looked uneasy...")
+- Foreshadow consequences
 - Surprise the player with emergent situations
 
 ### SHOULD NOT

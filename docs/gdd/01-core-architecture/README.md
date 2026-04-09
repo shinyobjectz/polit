@@ -10,7 +10,7 @@ blocks: [02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13]
 
 ## Overview
 
-POLIT uses a **bevy_ecs** Entity Component System as the simulation core, with plugin-style extensibility for modding. Everything in the game world — characters, districts, laws, economic sectors, cards, information, corporations, foreign nations — is an ECS entity with components. Systems process them each game tick.
+POLIT uses a **bevy_ecs** (v0.18, standalone — no full Bevy renderer needed) Entity Component System as the simulation core, with plugin-style extensibility for modding. Everything in the game world — characters, districts, laws, economic sectors, cards, information, corporations, foreign nations — is an ECS entity with components. Systems process them each game tick.
 
 ## Architecture Diagram
 
@@ -37,9 +37,9 @@ POLIT uses a **bevy_ecs** Entity Component System as the simulation core, with p
 │  └──────────────────┬───────────────────┘               │
 │                     │                                    │
 │  ┌──────────────────┴───────────────────┐               │
-│  │         AI Harness (Gemma 4)         │               │
-│  │  Candle inference · Tool router      │               │
-│  │  Prompt templates · Context builder  │               │
+│  │         AI Harness (Gemma)           │               │
+│  │  mistral.rs inference · Tool router  │               │
+│  │  GBNF grammar · Context builder      │               │
 │  └──────────────────┬───────────────────┘               │
 │                     │                                    │
 │  ┌──────────────────┴───────────────────┐               │
@@ -122,7 +122,7 @@ polit/
 │  │  ├─ corporate.rs          Corporate reaction system
 │  │  └─ meta.rs               Cross-run progression
 │  ├─ ai/                      Gemma 4 harness
-│  │  ├─ harness.rs            Candle inference wrapper
+│  │  ├─ harness.rs            mistral.rs inference wrapper
 │  │  ├─ context_builder.rs    World state → prompt
 │  │  ├─ tool_router.rs        Parse AI tool calls → ECS commands
 │  │  ├─ custom_action.rs      Freeform action pipeline
@@ -187,7 +187,7 @@ polit/
 |--------|---------------|-----------|
 | UI | Ratatui render loop (60fps) | crossterm event loop |
 | Game | ECS tick, simulation systems | bevy_ecs schedule |
-| AI | Candle inference (non-blocking) | tokio async |
+| AI | mistral.rs inference (non-blocking) | tokio async |
 | IO | RocksDB reads/writes | crossbeam channels |
 | Audio | CPAL mic input / TTS output | cpal callbacks |
 
