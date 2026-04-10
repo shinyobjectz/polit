@@ -232,7 +232,7 @@ impl ScenarioScreen {
                     Span::styled(era.label(), Style::default().fg(theme::FG).bold()),
                 ]));
                 lines.push(Line::from(vec![
-                    Span::raw("          "),
+                    Span::raw("       "),
                     Span::styled(
                         era.description(),
                         Style::default().fg(theme::FG_DIM).italic(),
@@ -269,7 +269,7 @@ impl ScenarioScreen {
                     Span::styled(diff.label(), Style::default().fg(theme::FG).bold()),
                 ]));
                 lines.push(Line::from(vec![
-                    Span::raw("          "),
+                    Span::raw("       "),
                     Span::styled(
                         diff.description(),
                         Style::default().fg(theme::FG_DIM).italic(),

@@ -90,11 +90,12 @@ impl TitleScreen {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(25), // top margin
-                Constraint::Length(3),      // title
+                Constraint::Percentage(30), // top margin
+                Constraint::Length(2),      // title
                 Constraint::Length(2),      // subtitle
-                Constraint::Length(1),      // spacer
-                Constraint::Min(8),         // menu
+                Constraint::Length(3),      // spacer
+                Constraint::Length(8),      // menu (fixed, not Min)
+                Constraint::Min(1),         // fill
                 Constraint::Length(2),      // footer
             ])
             .split(area);
