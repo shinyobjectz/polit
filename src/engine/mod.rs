@@ -23,6 +23,7 @@ pub struct GameState {
     pub config: config::GameConfig,
     pub ai: crate::ai::AiHarness,
     pub social: crate::systems::social_graph::SocialGraph,
+    pub economy: crate::systems::economy::EconomyState,
     ap_current: i32,
     ap_max: i32,
     /// NPC currently in conversation with (if any)
@@ -87,6 +88,7 @@ impl GameState {
             ap_current: ap,
             ap_max: ap,
             social: crate::systems::social_graph::SocialGraph::new(),
+            economy: crate::systems::economy::EconomyState::default(),
             active_npc: None,
         })
     }
@@ -119,6 +121,7 @@ impl GameState {
             ap_current: ap,
             ap_max: ap,
             social: crate::systems::social_graph::SocialGraph::new(),
+            economy: crate::systems::economy::EconomyState::default(),
             active_npc: None,
         })
     }

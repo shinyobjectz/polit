@@ -158,6 +158,9 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
         );
     }
 
+    // Tick the economy simulation
+    state.economy.tick();
+
     ch.send(UiMessage::PhaseHeader(format!(
         "Week {}, {} Begins",
         state.week, state.year
@@ -479,7 +482,7 @@ fn build_context(state: &GameState) -> GameContext {
         ap_max: state.ap_max(),
         active_npcs: vec![],
         recent_events: vec![],
-        economic_summary: "Economy is stable. Unemployment at 4.8%.".into(),
+        economic_summary: state.economy.summary(),
         tone_instructions: "Realistic political drama. Grounded and human.".into(),
     }
 }
