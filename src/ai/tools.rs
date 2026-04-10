@@ -74,6 +74,38 @@ pub enum ToolCall {
     /// Adjust player score/metrics
     #[serde(rename = "score_adjust")]
     ScoreAdjust { metric: String, delta: i32 },
+
+    /// Render a widget inline in the chat (generative UI)
+    #[serde(rename = "render_widget")]
+    RenderWidget {
+        widget_type: WidgetType,
+        title: Option<String>,
+        data: serde_json::Value,
+    },
+}
+
+/// Generic widget types the AI can render inline
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WidgetType {
+    /// Labeled horizontal bars with values
+    BarChart,
+    /// Single progress bar with label
+    Gauge,
+    /// Mini trend line from data points
+    Sparkline,
+    /// Rows and columns with headers
+    Table,
+    /// Key-value pairs in a bordered box
+    StatBlock,
+    /// Items with optional icons
+    List,
+    /// Colored message box (info/warning/success/error)
+    Alert,
+    /// Attributed text block
+    Quote,
+    /// Month view with highlighted dates
+    Calendar,
 }
 
 /// A response from the AI DM: narration text + zero or more tool calls
@@ -204,12 +236,17 @@ mod tests {
                 metric: "approval".into(),
                 delta: 5,
             },
+            ToolCall::RenderWidget {
+                widget_type: WidgetType::BarChart,
+                title: Some("Test Chart".into()),
+                data: serde_json::json!({"A": 10, "B": 20}),
+            },
         ];
 
         for call in &calls {
             let json = serde_json::to_string(call).unwrap();
             let _parsed: ToolCall = serde_json::from_str(&json).unwrap();
         }
-        assert_eq!(calls.len(), 12); // All 12 tool types
+        assert_eq!(calls.len(), 13); // All 13 tool types
     }
 }

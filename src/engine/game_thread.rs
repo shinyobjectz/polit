@@ -624,6 +624,20 @@ fn process_tool_calls(state: &mut GameState, ch: &GameChannels, calls: &[ToolCal
             ToolCall::UpdateVar { name, value } => {
                 ch.send(UiMessage::System(format!("  [{}={}]", name, value)));
             }
+            ToolCall::RenderWidget {
+                widget_type,
+                title,
+                data,
+            } => {
+                // Render inline widget in chat
+                let title_str = title.as_deref().unwrap_or("");
+                let widget_desc = format!("{:?}", widget_type);
+                ch.send(UiMessage::System(format!(
+                    "  [📊 {} — {}]",
+                    widget_desc, title_str
+                )));
+                // TODO: render actual widget inline once chat supports it
+            }
         }
     }
 }
