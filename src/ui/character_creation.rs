@@ -281,18 +281,19 @@ impl CharacterCreationScreen {
         terminal.draw(|frame| {
             let area = frame.area();
             frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
+            // Fixed layout — avatar breathes within its own space, nothing else moves
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Percentage(20),
-                    Constraint::Length(2),
-                    Constraint::Length(2),
-                    Constraint::Length(1 + breath),
-                    Constraint::Length(1),
-                    Constraint::Length(1),
-                    Constraint::Length(2),
-                    Constraint::Min(8),
-                    Constraint::Length(2),
+                    Constraint::Length(2), // POLIT
+                    Constraint::Length(2), // subtitle
+                    Constraint::Length(2), // spacer (fixed)
+                    Constraint::Length(2), // avatar area (2 lines: 1 for breathing room + 1 for face)
+                    Constraint::Length(1), // name
+                    Constraint::Length(2), // spacer
+                    Constraint::Min(8),    // content
+                    Constraint::Length(2), // footer
                 ])
                 .split(area);
 
@@ -321,12 +322,26 @@ impl CharacterCreationScreen {
             );
 
             if page >= 1 || !first.is_empty() {
+                // Avatar breathes within its 2-line area by scrolling
+                let avatar_text = if breath == 0 {
+                    vec![
+                        Line::from(Span::styled(
+                            &avatar,
+                            Style::default().fg(avatar_color).bold(),
+                        )),
+                        Line::from(""),
+                    ]
+                } else {
+                    vec![
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            &avatar,
+                            Style::default().fg(avatar_color).bold(),
+                        )),
+                    ]
+                };
                 frame.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
-                        &avatar,
-                        Style::default().fg(avatar_color).bold(),
-                    )))
-                    .alignment(Alignment::Center),
+                    Paragraph::new(avatar_text).alignment(Alignment::Center),
                     layout[4],
                 );
                 let ns = if page == 0 {
