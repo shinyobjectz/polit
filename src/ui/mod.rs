@@ -49,6 +49,13 @@ fn setup() -> Result<(GameState, crate::engine::channels::UiChannels, crate::eng
 }
 
 fn run_ui(ui_channels: crate::engine::channels::UiChannels) -> Result<(), Box<dyn std::error::Error>> {
+    // Clear screen and move cursor to top-left before entering raw mode
+    // so scrollback stays clean and the TUI starts on a fresh screen
+    use std::io::Write;
+    let mut stdout = std::io::stdout();
+    write!(stdout, "\x1b[2J\x1b[H")?;
+    stdout.flush()?;
+
     let mut terminal = ratatui::init();
     let mut app_inst = app::App::new(ui_channels);
     let result = app_inst.run(&mut terminal);
