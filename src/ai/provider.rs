@@ -190,7 +190,8 @@ impl AiProvider for CandleProvider {
         prompt: &str,
         _mode: DmMode,
     ) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
-        let output = self.generate_text(prompt, 512)?;
+        // Suppress stderr for the entire inference call (Metal shader spam)
+        let output = with_stderr_suppressed(|| self.generate_text(prompt, 512))?;
 
         match serde_json::from_str::<DmResponse>(&output) {
             Ok(response) => Ok(response),
