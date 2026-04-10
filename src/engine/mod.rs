@@ -28,6 +28,8 @@ pub struct GameState {
     ap_max: i32,
     /// NPC currently in conversation with (if any)
     pub active_npc: Option<String>,
+    /// Queue of simulation events to flush during Dawn Phase
+    pub event_queue: crate::systems::sim_events::SimEventQueue,
 }
 
 /// Current phase of the game loop
@@ -90,6 +92,7 @@ impl GameState {
             social: crate::systems::social_graph::SocialGraph::new(),
             economy: crate::systems::economy::EconomyState::default(),
             active_npc: None,
+            event_queue: crate::systems::sim_events::SimEventQueue::new(),
         })
     }
 
@@ -123,6 +126,7 @@ impl GameState {
             social: crate::systems::social_graph::SocialGraph::new(),
             economy: crate::systems::economy::EconomyState::default(),
             active_npc: None,
+            event_queue: crate::systems::sim_events::SimEventQueue::new(),
         })
     }
 

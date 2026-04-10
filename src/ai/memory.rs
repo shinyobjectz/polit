@@ -155,6 +155,11 @@ impl ConversationMemory {
         })
     }
 
+    /// Return the recent exchanges as a slice (for prompt building).
+    pub fn recent_exchanges(&self) -> &[Exchange] {
+        &self.recent
+    }
+
     pub fn turn_count(&self) -> u32 {
         self.turn_counter
     }
