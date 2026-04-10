@@ -15,19 +15,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("Starting POLIT in headless mode");
         engine::run_headless()?;
     } else if args.contains(&"--query".to_string()) {
-        // Headless query mode: load model, send one prompt, print response
         tracing_subscriber::fmt::init();
         run_query(&args)?;
-    } else if args.contains(&"--with-model".to_string()) {
-        // Launch game with real Gemma 4 model
-        init_file_logger();
-        run_with_model(&args)?;
-    } else if args.contains(&"--demo".to_string()) {
-        init_file_logger();
-        ui::run_demo()?;
-    } else {
+    } else if args.contains(&"--mock".to_string()) {
+        // Explicit mock mode (for testing without model)
         init_file_logger();
         ui::run_app()?;
+    } else {
+        // Default: always use real model
+        init_file_logger();
+        let model_id = get_model_id(&args);
+        let hf_token = std::env::var("HF_TOKEN").ok();
+
+        eprintln!("Loading Gemma 4 model...");
+        let provider = ai::provider::CandleProvider::load(model_id, hf_token.as_deref())
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
+        eprintln!("Ready.");
+
+        ui::run_app_with_provider(Box::new(provider))?;
     }
 
     Ok(())
@@ -42,15 +47,15 @@ fn run_query(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .position(|a| a == "--query")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
-        .unwrap_or("Hello, I'm a new city council member. What should I focus on?");
+        .unwrap_or("Hello");
 
     tracing::info!("Loading model: {}", model_id);
     let mut provider = ai::provider::CandleProvider::load(model_id, hf_token.as_deref())
         .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
 
-    tracing::info!("Generating response...");
+    tracing::info!("Generating...");
     let dm_prompt = format!(
-        "<start_of_turn>user\nYou are a political game dungeon master. Respond in character.\n\n{}<end_of_turn>\n<start_of_turn>model\n",
+        "<start_of_turn>user\nYou are the dungeon master for POLIT, an American politics simulator. Respond in character.\n\n{}<end_of_turn>\n<start_of_turn>model\n",
         prompt
     );
 
@@ -58,27 +63,10 @@ fn run_query(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match provider.generate(&dm_prompt, ai::DmMode::DungeonMaster) {
         Ok(response) => {
             println!("\n{}\n", response.narration);
-            if !response.tool_calls.is_empty() {
-                println!("Tool calls: {:?}", response.tool_calls);
-            }
         }
         Err(e) => eprintln!("Error: {}", e),
     }
 
-    Ok(())
-}
-
-fn run_with_model(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let model_id = get_model_id(args);
-    let hf_token = std::env::var("HF_TOKEN").ok();
-
-    // Print to stderr so it doesn't mess with TUI
-    eprintln!("Loading model: {} ...", model_id);
-    let provider = ai::provider::CandleProvider::load(model_id, hf_token.as_deref())
-        .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
-    eprintln!("Model loaded.");
-
-    ui::run_app_with_provider(Box::new(provider))?;
     Ok(())
 }
 
