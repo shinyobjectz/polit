@@ -193,12 +193,78 @@ impl AiProvider for CandleProvider {
         // Suppress stderr for the entire inference call (Metal shader spam)
         let output = with_stderr_suppressed(|| self.generate_text(prompt, 512))?;
 
-        match serde_json::from_str::<DmResponse>(&output) {
-            Ok(response) => Ok(response),
-            Err(_) => Ok(DmResponse {
-                narration: output,
-                tool_calls: vec![],
-            }),
+        // Try to parse as structured JSON response
+        if let Ok(response) = serde_json::from_str::<DmResponse>(&output) {
+            return Ok(response);
         }
+
+        // Model returned raw text — clean it up
+        let cleaned = clean_model_output(&output);
+        Ok(DmResponse {
+            narration: cleaned,
+            tool_calls: vec![],
+        })
+    }
+}
+
+/// Clean raw model output: strip JSON artifacts, special tokens, tool call syntax
+fn clean_model_output(raw: &str) -> String {
+    let mut text = raw.to_string();
+
+    // Strip special tokens
+    for token in &[
+        "<start_of_turn>",
+        "<end_of_turn>",
+        "<eos>",
+        "</s>",
+        "<bos>",
+        "model\n",
+        "user\n",
+    ] {
+        text = text.replace(token, "");
+    }
+
+    // Try to extract narration from partial JSON
+    if let Some(start) = text.find("\"narration\"") {
+        if let Some(colon) = text[start..].find(':') {
+            let after_colon = &text[start + colon + 1..];
+            // Find the string value
+            if let Some(quote_start) = after_colon.find('"') {
+                let inner = &after_colon[quote_start + 1..];
+                if let Some(quote_end) = inner.find('"') {
+                    return inner[..quote_end]
+                        .replace("\\n", "\n")
+                        .replace("\\\"", "\"");
+                }
+            }
+        }
+    }
+
+    // Strip any remaining JSON syntax
+    text = text.replace("{", "").replace("}", "");
+    text = text.replace("\"narration\":", "");
+    text = text.replace("\"tool_calls\": []", "");
+    text = text.replace("\"tool_calls\":[]", "");
+
+    // Remove lines that look like JSON keys
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.starts_with('"') || !trimmed.contains(':') || trimmed.len() > 60
+            // keep long lines even if they have quotes
+        })
+        .collect();
+
+    let result = lines.join("\n").trim().to_string();
+    if result.is_empty() {
+        // Fallback: return original minus special tokens
+        raw.replace("<start_of_turn>", "")
+            .replace("<end_of_turn>", "")
+            .replace("model\n", "")
+            .trim()
+            .to_string()
+    } else {
+        result
     }
 }
