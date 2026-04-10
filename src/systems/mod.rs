@@ -1,5 +1,6 @@
 pub mod cards;
 pub mod dice;
+pub mod social_graph;
 
 // Future modules:
 // pub mod political;

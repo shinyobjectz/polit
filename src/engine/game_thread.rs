@@ -95,6 +95,69 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
     state.phase = GamePhase::Dawn;
     send_status(state, ch);
 
+    // Seed the social graph on first week
+    if state.week == 1 && state.social.character_count() == 0 {
+        use crate::engine::components::{Relationship, RelationshipType};
+        state.social.add_character("player", "Player", true);
+        state
+            .social
+            .add_character("davis", "Councilwoman Davis", false);
+        state
+            .social
+            .add_character("kowalski", "Chief Kowalski", false);
+        state
+            .social
+            .add_character("martinez", "Sen. Martinez", false);
+        state.social.add_character("chen", "Gov. Chen", false);
+        state.social.add_character("kim", "Reporter Kim", false);
+
+        state.social.set_relationship(
+            "player",
+            "davis",
+            Relationship {
+                trust: -15,
+                respect: 30,
+                fear: 0,
+                loyalty: 10,
+                debt: 0,
+                knowledge: 20,
+                leverage: 0,
+                rel_type: RelationshipType::Rival,
+                memories: vec![],
+            },
+        );
+        state.social.set_relationship(
+            "player",
+            "kowalski",
+            Relationship {
+                trust: 30,
+                respect: 50,
+                fear: 0,
+                loyalty: 25,
+                debt: 0,
+                knowledge: 15,
+                leverage: 0,
+                rel_type: RelationshipType::Neutral,
+                memories: vec![],
+            },
+        );
+        state.social.set_relationship(
+            "player",
+            "martinez",
+            Relationship {
+                trust: 40,
+                respect: 35,
+                fear: 0,
+                loyalty: 20,
+                debt: 1,
+                knowledge: 10,
+                leverage: 0,
+                rel_type: RelationshipType::Ally,
+                memories: vec![],
+            },
+        );
+    }
+
     ch.send(UiMessage::PhaseHeader(format!(
         "Week {}, {} Begins",
         state.week, state.year
@@ -423,13 +486,45 @@ fn build_context(state: &GameState) -> GameContext {
 
 fn build_context_with_npc(state: &GameState, npc_name: &str) -> GameContext {
     let mut ctx = build_context(state);
+
+    // Try to find NPC in social graph by name match
+    let npc_id = npc_name
+        .to_lowercase()
+        .replace(" ", "_")
+        .replace("councilwoman_", "")
+        .replace("chief_", "")
+        .replace("sen._", "")
+        .replace("gov._", "")
+        .replace("reporter_", "");
+
+    let (trust, respect, memories) =
+        if let Some(rel) = state.social.get_relationship("player", &npc_id) {
+            (
+                rel.trust,
+                rel.respect,
+                rel.memories
+                    .iter()
+                    .map(|m| format!("Week {}: {}", m.week, m.description))
+                    .collect(),
+            )
+        } else {
+            (20, 40, vec![])
+        };
+
     ctx.active_npcs.push(NpcContext {
         name: npc_name.to_string(),
         role: "Local political figure".into(),
-        mood: "neutral".into(),
-        trust: 20,
-        respect: 40,
-        recent_memories: vec![],
+        mood: if trust > 50 {
+            "friendly"
+        } else if trust < -20 {
+            "hostile"
+        } else {
+            "neutral"
+        }
+        .into(),
+        trust,
+        respect,
+        recent_memories: memories,
     });
     ctx
 }
@@ -443,6 +538,11 @@ fn process_tool_calls(state: &mut GameState, ch: &GameChannels, calls: &[ToolCal
                 ch.send(UiMessage::Narrate(text.clone()));
             }
             ToolCall::ModifyRel { npc, field, delta } => {
+                // Apply to social graph
+                let npc_id = npc.to_lowercase().replace(" ", "_");
+                state
+                    .social
+                    .modify_relationship("player", &npc_id, field, *delta);
                 ch.send(UiMessage::System(format!(
                     "  [{}: {} {:+}]",
                     npc, field, delta

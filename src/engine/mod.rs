@@ -22,6 +22,7 @@ pub struct GameState {
     pub db: Database,
     pub config: config::GameConfig,
     pub ai: crate::ai::AiHarness,
+    pub social: crate::systems::social_graph::SocialGraph,
     ap_current: i32,
     ap_max: i32,
     /// NPC currently in conversation with (if any)
@@ -85,6 +86,7 @@ impl GameState {
             ai: crate::ai::AiHarness::new(provider),
             ap_current: ap,
             ap_max: ap,
+            social: crate::systems::social_graph::SocialGraph::new(),
             active_npc: None,
         })
     }
@@ -116,6 +118,7 @@ impl GameState {
             ai: crate::ai::AiHarness::mock(),
             ap_current: ap,
             ap_max: ap,
+            social: crate::systems::social_graph::SocialGraph::new(),
             active_npc: None,
         })
     }
