@@ -2,7 +2,11 @@
 
 import msgpack
 
-_layers: list = []
+from sim.layers.household import HouseholdLayer
+
+_layers: list = [
+    HouseholdLayer(),
+]
 
 
 def _default_delta() -> dict:
