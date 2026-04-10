@@ -5,6 +5,18 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use super::chat::ChatStream;
 use crate::engine::channels::{UiChannels, UiCommand, UiMessage};
 
+/// A card as displayed in the UI (lightweight view, no gameplay logic)
+#[derive(Debug, Clone)]
+pub struct CardView {
+    pub id: String,
+    pub name: String,
+    pub card_type: String, // "tactic", "asset", "position"
+    pub category: String,
+    pub rarity: String,
+    pub description: String,
+    pub play_count: u32,
+}
+
 /// Main application state (UI thread only)
 pub struct App {
     pub chat: ChatStream,
@@ -12,6 +24,10 @@ pub struct App {
     pub should_quit: bool,
     pub overlay: Option<Overlay>,
     pub channels: UiChannels,
+    // Player's deck (for display in overlay)
+    pub deck: Vec<CardView>,
+    pub coherence_label: String,
+    pub coherence_score: i32,
     // Status bar state (updated via messages from game thread)
     pub week: u32,
     pub year: u32,
@@ -43,6 +59,46 @@ impl App {
             should_quit: false,
             overlay: None,
             channels,
+            deck: vec![
+                CardView {
+                    id: "stump_speech".into(),
+                    name: "Stump Speech".into(),
+                    card_type: "tactic".into(),
+                    category: "campaign".into(),
+                    rarity: "common".into(),
+                    description: "A basic public address.".into(),
+                    play_count: 0,
+                },
+                CardView {
+                    id: "grassroots_support".into(),
+                    name: "Grassroots Support".into(),
+                    card_type: "asset".into(),
+                    category: "organization".into(),
+                    rarity: "common".into(),
+                    description: "Community volunteers backing you.".into(),
+                    play_count: 0,
+                },
+                CardView {
+                    id: "pro_environment".into(),
+                    name: "Pro-Environment".into(),
+                    card_type: "position".into(),
+                    category: "wedge_issue".into(),
+                    rarity: "common".into(),
+                    description: "You stand for environmental protection.".into(),
+                    play_count: 0,
+                },
+                CardView {
+                    id: "transparency".into(),
+                    name: "Transparency".into(),
+                    card_type: "position".into(),
+                    category: "governance".into(),
+                    rarity: "common".into(),
+                    description: "You believe in open government.".into(),
+                    play_count: 0,
+                },
+            ],
+            coherence_label: "Pragmatist".into(),
+            coherence_score: 0,
             week: 1,
             year: 2024,
             phase: "Starting".into(),
@@ -228,24 +284,11 @@ impl App {
                     "  [Esc] Close",
                 ],
             ),
-            Overlay::Deck => (
-                "🃏 CARDS & DECK",
-                vec![
-                    "",
-                    "  Your deck is empty.",
-                    "  Cards are acquired through gameplay —",
-                    "  win negotiations, pass bills, build relationships.",
-                    "",
-                    "  Card types:",
-                    "    [T] Tactic  — actions you can take",
-                    "    [A] Asset   — resources you hold",
-                    "    [P] Position — what you stand for",
-                    "",
-                    "  (Card system coming in Phase 4)",
-                    "",
-                    "  [Esc] Close",
-                ],
-            ),
+            Overlay::Deck => {
+                // Dynamic card overlay — render separately
+                self.render_deck_overlay(frame, overlay_area);
+                return;
+            }
             Overlay::Map => (
                 "🗺  MAP",
                 vec![
@@ -292,6 +335,107 @@ impl App {
 
         frame.render_widget(Clear, overlay_area);
         frame.render_widget(Paragraph::new(text).block(block), overlay_area);
+    }
+
+    fn render_deck_overlay(&self, frame: &mut Frame, area: Rect) {
+        let mut lines: Vec<Line> = vec![Line::from("")];
+
+        // Header with coherence
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} cards in deck", self.deck.len()),
+                Style::default().fg(Color::White),
+            ),
+            Span::raw("  │  "),
+            Span::styled(
+                format!(
+                    "Coherence: {} ({})",
+                    self.coherence_label, self.coherence_score
+                ),
+                Style::default().fg(match self.coherence_label.as_str() {
+                    "Principled" => Color::Green,
+                    "Flip-Flopper" => Color::Red,
+                    _ => Color::Yellow,
+                }),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        // Group by type
+        let tactics: Vec<_> = self
+            .deck
+            .iter()
+            .filter(|c| c.card_type == "tactic")
+            .collect();
+        let assets: Vec<_> = self
+            .deck
+            .iter()
+            .filter(|c| c.card_type == "asset")
+            .collect();
+        let positions: Vec<_> = self
+            .deck
+            .iter()
+            .filter(|c| c.card_type == "position")
+            .collect();
+
+        if !tactics.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  ── TACTICS ──",
+                Style::default().fg(Color::Cyan).bold(),
+            )));
+            for card in &tactics {
+                lines.push(render_card_line(card, "T"));
+            }
+            lines.push(Line::from(""));
+        }
+
+        if !assets.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  ── ASSETS ──",
+                Style::default().fg(Color::Yellow).bold(),
+            )));
+            for card in &assets {
+                lines.push(render_card_line(card, "A"));
+            }
+            lines.push(Line::from(""));
+        }
+
+        if !positions.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  ── POSITIONS ──",
+                Style::default().fg(Color::Magenta).bold(),
+            )));
+            for card in &positions {
+                lines.push(render_card_line(card, "P"));
+            }
+            lines.push(Line::from(""));
+        }
+
+        if self.deck.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  Your deck is empty.",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(Span::styled(
+                "  Cards are acquired through gameplay.",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(""));
+        }
+
+        lines.push(Line::from(Span::styled(
+            "  [Esc] Close",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let block = Block::default()
+            .title(" 🃏 CARDS & DECK ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .style(Style::default().bg(Color::Rgb(15, 15, 25)));
+
+        frame.render_widget(Clear, area);
+        frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
     fn handle_input(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -415,6 +559,43 @@ impl App {
                 .send(UiCommand::PlayerInput(input.to_string()));
         }
     }
+}
+
+fn render_card_line<'a>(card: &'a CardView, type_tag: &'a str) -> Line<'a> {
+    let tag_color = match type_tag {
+        "T" => Color::Cyan,
+        "A" => Color::Yellow,
+        "P" => Color::Magenta,
+        _ => Color::White,
+    };
+
+    let rarity_indicator = match card.rarity.as_str() {
+        "common" => "  ",
+        "uncommon" => "★ ",
+        "rare" => "★★",
+        "legendary" => "★★★",
+        _ => "  ",
+    };
+
+    let rarity_color = match card.rarity.as_str() {
+        "common" => Color::DarkGray,
+        "uncommon" => Color::Green,
+        "rare" => Color::Rgb(100, 149, 237), // cornflower blue
+        "legendary" => Color::Rgb(255, 215, 0), // gold
+        _ => Color::DarkGray,
+    };
+
+    Line::from(vec![
+        Span::styled(format!("  [{}] ", type_tag), Style::default().fg(tag_color)),
+        Span::styled(&card.name, Style::default().fg(Color::White).bold()),
+        Span::raw("  "),
+        Span::styled(rarity_indicator, Style::default().fg(rarity_color)),
+        Span::raw("  "),
+        Span::styled(
+            &card.description,
+            Style::default().fg(Color::Rgb(120, 120, 140)),
+        ),
+    ])
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

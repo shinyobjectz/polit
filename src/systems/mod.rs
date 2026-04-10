@@ -1,3 +1,4 @@
+pub mod cards;
 pub mod dice;
 
 // Future modules:

@@ -1,0 +1,204 @@
+# Cards that can be acquired through gameplay
+# These appear in the world for all archetypes
+
+# === TACTIC CARDS ===
+
+[[cards]]
+id = "press_conference"
+name = "Press Conference"
+type = "tactic"
+category = "media"
+rarity = "uncommon"
+ap_cost = 1
+description = "Call the media together. Control the narrative — or try to."
+requirements = ["press_secretary"]
+
+[[cards]]
+id = "backroom_deal"
+name = "Backroom Deal"
+type = "tactic"
+category = "covert"
+rarity = "uncommon"
+ap_cost = 2
+description = "Make an arrangement away from public view. Effective but risky."
+requirements = []
+
+[[cards]]
+id = "filibuster"
+name = "Filibuster"
+type = "tactic"
+category = "political"
+rarity = "rare"
+ap_cost = 3
+description = "Hold the floor indefinitely. Requires a committee seat."
+requirements = ["committee_seat"]
+
+[[cards]]
+id = "opposition_research"
+name = "Opposition Research"
+type = "tactic"
+category = "covert"
+rarity = "uncommon"
+ap_cost = 2
+description = "Dig into your opponent's past. Creates information entities."
+requirements = []
+
+[[cards]]
+id = "rally"
+name = "Rally"
+type = "tactic"
+category = "campaign"
+rarity = "uncommon"
+ap_cost = 2
+description = "Organize a public rally. Boosts approval in your district."
+requirements = ["grassroots_support"]
+
+[[cards]]
+id = "logroll"
+name = "Logroll"
+type = "tactic"
+category = "political"
+rarity = "uncommon"
+ap_cost = 1
+description = "Trade votes on bills. I'll support yours if you support mine."
+requirements = []
+
+[[cards]]
+id = "executive_order"
+name = "Executive Order"
+type = "tactic"
+category = "legal"
+rarity = "legendary"
+ap_cost = 0
+description = "Unilateral executive action. Powerful but challengeable."
+requirements = ["president"]
+
+# === ASSET CARDS ===
+
+[[cards]]
+id = "media_contact"
+name = "Media Contact"
+type = "asset"
+category = "people"
+rarity = "uncommon"
+ap_cost = 0
+description = "A journalist who takes your calls. +3 to spin/suppress attempts."
+requirements = []
+
+[[cards]]
+id = "union_endorsement"
+name = "Union Endorsement"
+type = "asset"
+category = "organization"
+rarity = "uncommon"
+ap_cost = 0
+description = "Organized labor is behind you. Strong in blue-collar districts."
+requirements = []
+
+[[cards]]
+id = "committee_seat"
+name = "Committee Seat"
+type = "asset"
+category = "institutional"
+rarity = "rare"
+ap_cost = 0
+description = "A seat on a key committee. Unlocks legislative tactics."
+requirements = []
+
+[[cards]]
+id = "war_chest"
+name = "War Chest"
+type = "asset"
+category = "resource"
+rarity = "uncommon"
+ap_cost = 0
+description = "A healthy campaign fund. Enables ad buys and staff hires."
+requirements = []
+
+[[cards]]
+id = "corporate_mega_donor"
+name = "Corporate Mega-Donor"
+type = "asset"
+category = "people"
+rarity = "rare"
+ap_cost = 0
+description = "Deep pockets with strings attached. Massive funding, political risk."
+requirements = []
+
+[[cards]]
+id = "kompromat"
+name = "Kompromat"
+type = "asset"
+category = "resource"
+rarity = "rare"
+ap_cost = 0
+description = "Compromising information on someone. Leverage or a ticking bomb."
+requirements = []
+
+# === POSITION CARDS ===
+
+[[cards]]
+id = "free_trade"
+name = "Free Trade"
+type = "position"
+category = "economic"
+rarity = "common"
+ap_cost = 0
+description = "You support open markets and international trade agreements."
+aligned_with = ["pro_business", "globalist"]
+contradicts = ["protectionist", "isolationist"]
+
+[[cards]]
+id = "protectionist"
+name = "Protectionist"
+type = "position"
+category = "economic"
+rarity = "common"
+ap_cost = 0
+description = "You favor tariffs and domestic industry protection."
+aligned_with = ["isolationist"]
+contradicts = ["free_trade", "globalist"]
+
+[[cards]]
+id = "hawk"
+name = "Hawk"
+type = "position"
+category = "foreign_policy"
+rarity = "common"
+ap_cost = 0
+description = "Strong military, forward deployment, project American power."
+aligned_with = ["pro_military"]
+contradicts = ["dove", "isolationist"]
+
+[[cards]]
+id = "dove"
+name = "Dove"
+type = "position"
+category = "foreign_policy"
+rarity = "common"
+ap_cost = 0
+description = "Diplomacy first, reduce military spending, avoid foreign entanglements."
+aligned_with = ["isolationist"]
+contradicts = ["hawk", "pro_military"]
+
+[[cards]]
+id = "big_government"
+name = "Big Government"
+type = "position"
+category = "governance"
+rarity = "common"
+ap_cost = 0
+description = "Government should actively solve problems and provide services."
+aligned_with = ["pro_education", "pro_healthcare"]
+contradicts = ["small_government", "austerity"]
+
+[[cards]]
+id = "small_government"
+name = "Small Government"
+type = "position"
+category = "governance"
+rarity = "common"
+ap_cost = 0
+description = "Less regulation, lower taxes, individual responsibility."
+aligned_with = ["austerity", "deregulation"]
+contradicts = ["big_government", "pro_regulation"]

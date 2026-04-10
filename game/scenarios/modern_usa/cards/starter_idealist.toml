@@ -1,0 +1,85 @@
+# Starter deck for The Idealist archetype
+# Strong position cards, weak asset cards
+
+[[cards]]
+id = "stump_speech"
+name = "Stump Speech"
+type = "tactic"
+category = "campaign"
+rarity = "common"
+ap_cost = 1
+description = "A basic public address. Gets your message out, nothing fancy."
+requirements = []
+
+[[cards]]
+id = "door_to_door"
+name = "Door-to-Door"
+type = "tactic"
+category = "campaign"
+rarity = "common"
+ap_cost = 1
+description = "Knock on doors, shake hands, listen to constituents."
+requirements = []
+
+[[cards]]
+id = "op_ed"
+name = "Op-Ed"
+type = "tactic"
+category = "media"
+rarity = "common"
+ap_cost = 0
+description = "Write an opinion piece for the local paper."
+requirements = []
+
+[[cards]]
+id = "pro_environment"
+name = "Pro-Environment"
+type = "position"
+category = "wedge_issue"
+rarity = "common"
+ap_cost = 0
+description = "You stand for environmental protection and green energy."
+aligned_with = ["pro_regulation", "anti_corporate"]
+contradicts = ["pro_drilling", "deregulation"]
+
+[[cards]]
+id = "pro_education"
+name = "Pro-Education"
+type = "position"
+category = "social"
+rarity = "common"
+ap_cost = 0
+description = "You champion public education funding and teacher pay."
+aligned_with = ["big_government"]
+contradicts = ["austerity"]
+
+[[cards]]
+id = "transparency"
+name = "Transparency"
+type = "position"
+category = "governance"
+rarity = "common"
+ap_cost = 0
+description = "You believe in open government and public accountability."
+aligned_with = ["anti_corruption"]
+contradicts = []
+
+[[cards]]
+id = "grassroots_support"
+name = "Grassroots Support"
+type = "asset"
+category = "organization"
+rarity = "common"
+ap_cost = 0
+description = "A small but passionate base of community volunteers."
+requirements = []
+
+[[cards]]
+id = "local_donor"
+name = "Local Donor"
+type = "asset"
+category = "people"
+rarity = "common"
+ap_cost = 0
+description = "A modest but reliable individual campaign contributor."
+requirements = []
