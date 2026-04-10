@@ -134,8 +134,9 @@ enum CreationPhase {
 pub struct CharacterCreationScreen {
     phase: CreationPhase,
     // Basic form fields — paginated
-    form_page: usize,    // 0=first name, 1=last name, 2=design (head/eyes/color)
-    design_field: usize, // within page 2: 0=head, 1=eyes, 2=color
+    form_page: usize,    // 0=name (first+last), 1=design (head/eyes/color)
+    name_field: usize,   // within page 0: 0=first, 1=last
+    design_field: usize, // within page 1: 0=head, 1=eyes, 2=color
     first_name: String,
     last_name: String,
     head_selected: usize,
@@ -154,29 +155,37 @@ pub struct CharacterCreationScreen {
     dm_question_count: u32,
 }
 
-const SYSTEM_PROMPT: &str = r#"You are the dungeon master for POLIT, an American politics simulator. You are helping the player create their character.
+const SYSTEM_PROMPT: &str = r#"You are the Narrator for POLIT, an American politics simulator. You are helping the player create their character through conversation.
 
-Ask questions ONE AT A TIME to build their character. Start with their name, then background, then what kind of politician they want to be.
+PRIORITY ORDER for every response:
+1. LOCK IN any new information the player reveals (background, traits, motivation, etc.)
+2. If the player requests changes, acknowledge and update
+3. Then respond conversationally — ask the NEXT question to deepen the character
 
-Keep your responses short (2-3 sentences max). Be conversational and warm.
+Ask questions ONE AT A TIME. Be collaborative — build on what they give you, suggest details, help them craft a rich backstory. Don't just accept one-word answers — explore them.
 
-After each answer, acknowledge it briefly and ask the next question. The fields to fill in order:
-1. Name
-2. Background (what they did before politics)
-3. Archetype (suggest options: Idealist, Machine Politician, Outsider, Dealmaker, Prosecutor, Activist, Veteran, Mogul)
-4. Starting office (City Council, School Board, State Legislature, etc.)
-5. Party affiliation
-6. Two character traits (one positive, one negative)
-7. Family situation
-8. Core motivation (why politics?)
+For example, if they say "lawyer" for background, ask what KIND of law, what case changed them, why they left.
 
-When the player seems ready or says they want to start, say "Let's begin your story." and nothing else."#;
+Keep responses to 2-4 sentences. Be warm, curious, and creative.
+
+Fields to fill through conversation (name is already set):
+- Background (what they did before politics — dig deep)
+- Archetype (suggest: Idealist, Machine Politician, Outsider, Dealmaker, Prosecutor, Activist, Veteran, Mogul)
+- Starting office (City Council, School Board, State Legislature, etc.)
+- Party affiliation
+- Character traits (one strength, one flaw)
+- Family situation
+- Core motivation (the real reason they entered politics)
+- A secret or vulnerability
+
+When the character feels complete, say "Your story is ready. Shall we begin?" and nothing else."#;
 
 impl CharacterCreationScreen {
     pub fn new() -> Self {
         Self {
             phase: CreationPhase::BasicForm,
             form_page: 0,
+            name_field: 0,
             design_field: 0,
             first_name: String::new(),
             last_name: String::new(),
@@ -335,9 +344,8 @@ impl CharacterCreationScreen {
             );
 
             let sub = match page {
-                0 => "What's your name?",
-                1 => "And your family name?",
-                2 => "Design your look",
+                0 => "Name your character",
+                1 => "Design your look",
                 _ => "",
             };
             frame.render_widget(
@@ -349,7 +357,7 @@ impl CharacterCreationScreen {
                 layout[2],
             );
 
-            if page == 2 {
+            if page == 1 {
                 // Avatar breathes within its 2-line area by scrolling
                 let avatar_text = if breath == 0 {
                     vec![
@@ -389,20 +397,35 @@ impl CharacterCreationScreen {
                 }
             }
 
+            let name_field = self.name_field;
             match page {
-                0 | 1 => {
-                    let w = 40u16;
+                // Page 0: First + Last name on same card
+                0 => {
+                    let w = 44u16;
                     let cx = area.x + (area.width.saturating_sub(w)) / 2;
-                    let ca = Rect::new(cx, layout[7].y, w, 3);
+                    let ca = Rect::new(cx, layout[7].y, w, 8);
                     let blk = Block::default()
                         .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme::ACCENT_BLUE))
-                        .style(Style::default().bg(theme::BG_HIGHLIGHT));
+                        .border_style(Style::default().fg(theme::BORDER))
+                        .style(Style::default().bg(theme::BG_SUBTLE));
                     let inner = blk.inner(ca);
                     frame.render_widget(blk, ca);
-                    frame.render_widget(
-                        Paragraph::new(Line::from(vec![
-                            Span::styled("▶ ", Style::default().fg(theme::ACCENT)),
+
+                    let mut name_lines: Vec<Line> = vec![Line::from("")];
+
+                    // First name
+                    let first_active = name_field == 0;
+                    name_lines.push(Line::from(Span::styled(
+                        "  First Name",
+                        Style::default().fg(if first_active {
+                            theme::FG
+                        } else {
+                            theme::FG_DIM
+                        }),
+                    )));
+                    if first_active {
+                        name_lines.push(Line::from(vec![
+                            Span::styled("  ▶ ", Style::default().fg(theme::ACCENT)),
                             Span::styled(&input, Style::default().fg(theme::FG)),
                             Span::styled(
                                 "▊",
@@ -410,11 +433,49 @@ impl CharacterCreationScreen {
                                     .fg(theme::FG_DIM)
                                     .add_modifier(Modifier::SLOW_BLINK),
                             ),
-                        ])),
-                        inner,
-                    );
+                        ]));
+                    } else {
+                        let v = if first.is_empty() { "..." } else { &first };
+                        name_lines.push(Line::from(Span::styled(
+                            format!("    {}", v),
+                            Style::default().fg(theme::FG_DIM),
+                        )));
+                    }
+                    name_lines.push(Line::from(""));
+
+                    // Last name
+                    let last_active = name_field == 1;
+                    name_lines.push(Line::from(Span::styled(
+                        "  Last Name",
+                        Style::default().fg(if last_active {
+                            theme::FG
+                        } else {
+                            theme::FG_DIM
+                        }),
+                    )));
+                    if last_active {
+                        name_lines.push(Line::from(vec![
+                            Span::styled("  ▶ ", Style::default().fg(theme::ACCENT)),
+                            Span::styled(&input, Style::default().fg(theme::FG)),
+                            Span::styled(
+                                "▊",
+                                Style::default()
+                                    .fg(theme::FG_DIM)
+                                    .add_modifier(Modifier::SLOW_BLINK),
+                            ),
+                        ]));
+                    } else {
+                        let v = if last.is_empty() { "..." } else { &last };
+                        name_lines.push(Line::from(Span::styled(
+                            format!("    {}", v),
+                            Style::default().fg(theme::FG_DIM),
+                        )));
+                    }
+
+                    frame.render_widget(Paragraph::new(name_lines), inner);
                 }
-                2 => {
+                // Page 1: Design
+                1 => {
                     let w = 56u16;
                     let cx = area.x + (area.width.saturating_sub(w)) / 2;
                     let ca = Rect::new(cx, layout[7].y, w, 14);
@@ -513,9 +574,8 @@ impl CharacterCreationScreen {
                 _ => {}
             }
             let ft = match page {
-                0 => "Enter to continue",
-                1 => "Enter to continue   Shift+Enter back",
-                2 => match design_field {
+                0 => "Enter to confirm   Shift+Enter to go back",
+                1 => match design_field {
                     0 => "← → head shape   Enter to lock   Shift+Enter back",
                     1 => "← → eyes   Enter to lock   Shift+Enter back",
                     2 => "← → color   Enter to finish   Shift+Enter back",
@@ -542,23 +602,26 @@ impl CharacterCreationScreen {
                     return Ok(false);
                 }
 
-                // Shift+Enter goes backward on ALL pages
+                // Shift+Enter goes backward
                 if key.code == KeyCode::Enter
                     && key
                         .modifiers
                         .contains(crossterm::event::KeyModifiers::SHIFT)
                 {
                     match self.form_page {
-                        0 => {} // Can't go back from first page
-                        1 => {
-                            self.form_page = 0;
-                            self.form_input = self.first_name.clone();
+                        0 => {
+                            // Go back within name fields
+                            if self.name_field > 0 {
+                                self.name_field -= 1;
+                                self.form_input = self.first_name.clone();
+                            }
                         }
-                        2 => {
+                        1 => {
                             if self.design_field > 0 {
                                 self.design_field -= 1;
                             } else {
-                                self.form_page = 1;
+                                self.form_page = 0;
+                                self.name_field = 1;
                                 self.form_input = self.last_name.clone();
                             }
                         }
@@ -568,12 +631,19 @@ impl CharacterCreationScreen {
                 }
 
                 match self.form_page {
+                    // Page 0: Name (first + last on same page)
                     0 => match key.code {
                         KeyCode::Enter => {
                             if !self.form_input.is_empty() {
-                                self.first_name = self.form_input.clone();
-                                self.form_input.clear();
-                                self.form_page = 1;
+                                if self.name_field == 0 {
+                                    self.first_name = self.form_input.clone();
+                                    self.form_input.clear();
+                                    self.name_field = 1;
+                                } else {
+                                    self.last_name = self.form_input.clone();
+                                    self.form_input.clear();
+                                    self.form_page = 1; // → Design page
+                                }
                             }
                         }
                         KeyCode::Backspace => {
@@ -584,23 +654,8 @@ impl CharacterCreationScreen {
                         }
                         _ => {}
                     },
+                    // Page 1: Design (head/eyes/color)
                     1 => match key.code {
-                        KeyCode::Enter => {
-                            if !self.form_input.is_empty() {
-                                self.last_name = self.form_input.clone();
-                                self.form_input.clear();
-                                self.form_page = 2;
-                            }
-                        }
-                        KeyCode::Backspace => {
-                            self.form_input.pop();
-                        }
-                        KeyCode::Char(c) => {
-                            self.form_input.push(c);
-                        }
-                        _ => {}
-                    },
-                    2 => match key.code {
                         KeyCode::Left => match self.design_field {
                             0 => {
                                 if self.head_selected > 0 {
@@ -935,7 +990,19 @@ impl CharacterCreationScreen {
                             self.input.clear();
                             self.dm_question_count += 1;
 
-                            self.chat.add_player(&input);
+                            // Show player message with their avatar
+                            let player_face = build_avatar(self.head_selected, self.eyes_selected);
+                            let (player_color, _) = COLOR_OPTIONS[self.color_selected];
+                            let player_name =
+                                self.character.get("name").unwrap_or("Player").to_string();
+                            self.chat.add_player_with_avatar(
+                                &input,
+                                NpcAvatar {
+                                    face: player_face,
+                                    color: player_color,
+                                    name: player_name,
+                                },
+                            );
 
                             // Check if player wants to start
                             let input_lower = input.to_lowercase();

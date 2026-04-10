@@ -61,6 +61,10 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 - All game data in TOML (human-readable, moddable)
 - Prompts in `game/prompts/` — always editable, never hardcoded
 - Column family per domain in RocksDB
+- **Max 500 lines per file** — split into subfolders/components when files grow beyond this
+- Player messages show their avatar (colored name + face), white text body
+- NPC messages show their avatar (colored name + face), colored text body
+- "Narrator" (not "DM" or "Dungeon Master") with red ✦✦ avatar for system narration
 
 ## Development Commands
 

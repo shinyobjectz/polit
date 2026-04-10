@@ -87,6 +87,18 @@ impl ChatStream {
         self.add_message(MessageStyle::PlayerInput, &format!("> {}", text));
     }
 
+    /// Add player message with their avatar (colored name, white text)
+    pub fn add_player_with_avatar(&mut self, text: &str, avatar: NpcAvatar) {
+        self.messages.push(ChatMessage {
+            style: MessageStyle::PlayerInput,
+            text: text.to_string(),
+            avatar: Some(avatar),
+        });
+        if !self.user_scrolled {
+            self.scroll_up = 0;
+        }
+    }
+
     pub fn add_system(&mut self, text: &str) {
         self.add_message(MessageStyle::SystemEvent, text);
     }
@@ -150,6 +162,10 @@ impl ChatStream {
                 let style = match msg.style {
                     MessageStyle::Narration => Style::default().fg(theme::NARRATION),
                     MessageStyle::NpcDialogue => Style::default().fg(theme::NPC_DIALOGUE),
+                    // Player messages with avatar: white text (name is already colored above)
+                    MessageStyle::PlayerInput if msg.avatar.is_some() => {
+                        Style::default().fg(theme::FG)
+                    }
                     MessageStyle::PlayerInput => Style::default().fg(theme::PLAYER_INPUT),
                     MessageStyle::SystemEvent => Style::default().fg(theme::FG_DIM),
                     MessageStyle::Warning => Style::default().fg(theme::WARNING),
