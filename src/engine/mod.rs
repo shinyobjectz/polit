@@ -6,6 +6,7 @@ pub mod events;
 pub mod channels;
 pub mod config;
 pub mod demo;
+pub mod paths;
 
 use bevy_ecs::prelude::*;
 
