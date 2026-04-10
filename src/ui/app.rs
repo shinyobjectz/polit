@@ -258,7 +258,7 @@ impl App {
                 )
             } else {
                 Span::styled(
-                    "[Tab] Menu  [PgUp/PgDn] Scroll",
+                    "[Tab] Menu  [Scroll] History",
                     Style::default().fg(Color::DarkGray),
                 )
             },
@@ -268,7 +268,23 @@ impl App {
 
     fn handle_input(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(std::time::Duration::from_millis(16))? {
-            if let Event::Key(key) = event::read()? {
+            let evt = event::read()?;
+
+            // Handle mouse scroll (trackpad/scroll wheel)
+            if let Event::Mouse(mouse) = evt {
+                match mouse.kind {
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        self.chat.scroll_up_by(3);
+                    }
+                    crossterm::event::MouseEventKind::ScrollDown => {
+                        self.chat.scroll_down_by(3);
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+
+            if let Event::Key(key) = evt {
                 if key.kind != KeyEventKind::Press {
                     return Ok(());
                 }

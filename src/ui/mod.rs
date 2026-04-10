@@ -9,6 +9,19 @@ use crate::engine::{demo, game_thread};
 
 use title::{TitleAction, TitleScreen};
 
+/// Initialize terminal with mouse support
+fn init_terminal() -> ratatui::DefaultTerminal {
+    // Enable mouse capture for trackpad/scroll wheel
+    crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).ok();
+    ratatui::init()
+}
+
+/// Restore terminal and disable mouse capture
+fn restore_terminal() {
+    ratatui::restore();
+    crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture).ok();
+}
+
 /// Launch the full game with title screen
 pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;
@@ -18,24 +31,18 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         .map(|mut d| d.next().is_some())
         .unwrap_or(false);
 
-    // Enter alternate screen ONCE for the entire session
-    let mut terminal = ratatui::init();
+    let mut terminal = init_terminal();
 
     // Show title screen
     let mut title = TitleScreen::new(has_save);
     let action = title.run(&mut terminal)?;
 
     match action {
-        TitleAction::Quit => {
-            ratatui::restore();
-            return Ok(());
-        }
-        TitleAction::Settings => {
-            ratatui::restore();
+        TitleAction::Quit | TitleAction::Settings => {
+            restore_terminal();
             return Ok(());
         }
         TitleAction::Demo => {
-            // Run demo in the SAME terminal session (no restore/reinit)
             let state = GameState::new(paths.db.to_str().unwrap())?;
             let channels = Channels::new();
             let (ui_channels, game_channels) = channels.split();
@@ -49,12 +56,11 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut app_inst = app::App::new(ui_channels);
             let result = app_inst.run(&mut terminal);
-            ratatui::restore();
+            restore_terminal();
             let _ = game_handle.join();
             return result;
         }
         TitleAction::NewCampaign | TitleAction::ContinueCampaign => {
-            // Continue in SAME terminal session
             let state = GameState::new(paths.db.to_str().unwrap())?;
             let channels = Channels::new();
             let (ui_channels, game_channels) = channels.split();
@@ -62,7 +68,7 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut app_inst = app::App::new(ui_channels);
             let result = app_inst.run(&mut terminal);
-            ratatui::restore();
+            restore_terminal();
             let _ = game_handle.join();
             return result;
         }
@@ -83,10 +89,10 @@ pub fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
         })
         .expect("Failed to spawn demo thread");
 
-    let mut terminal = ratatui::init();
+    let mut terminal = init_terminal();
     let mut app_inst = app::App::new(ui_channels);
     let result = app_inst.run(&mut terminal);
-    ratatui::restore();
+    restore_terminal();
 
     let _ = game_handle.join();
     result
