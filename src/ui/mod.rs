@@ -1,4 +1,5 @@
 pub mod app;
+pub mod character_creation;
 pub mod chat;
 pub mod intro;
 pub mod scenario;
@@ -61,7 +62,10 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = intro_screen.run(&mut terminal);
             }
 
-            // TODO: character creation here
+            // Character creation (mock AI)
+            let mut mock_ai = crate::ai::mock::MockProvider::new();
+            let mut char_screen = character_creation::CharacterCreationScreen::new();
+            let _character = char_screen.run(&mut terminal, &mut mock_ai)?;
 
             let state = GameState::new(paths.db.to_str().unwrap())?;
             let channels = Channels::new();
@@ -91,7 +95,7 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Launch with a specific AI provider (e.g., real Gemma 4 model)
 pub fn run_app_with_provider(
-    provider: Box<dyn crate::ai::AiProvider>,
+    mut provider: Box<dyn crate::ai::AiProvider>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;
     let has_save = paths
@@ -123,7 +127,10 @@ pub fn run_app_with_provider(
             if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
                 let _ = intro_screen.run(&mut terminal);
             }
-            // TODO: character creation here
+
+            // Character creation (AI-guided)
+            let mut char_screen = character_creation::CharacterCreationScreen::new();
+            let _character = char_screen.run(&mut terminal, provider.as_mut())?;
         }
         TitleAction::ContinueCampaign => {}
     }
