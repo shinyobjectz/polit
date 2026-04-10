@@ -385,7 +385,7 @@ impl CharacterCreationScreen {
                 2 => {
                     let w = 56u16;
                     let cx = area.x + (area.width.saturating_sub(w)) / 2;
-                    let ca = Rect::new(cx, layout[7].y, w, 12);
+                    let ca = Rect::new(cx, layout[7].y, w, 14);
                     let mut lines: Vec<Line> = vec![Line::from("")];
                     let hfg = if design_field == 0 {
                         theme::FG
@@ -468,6 +468,7 @@ impl CharacterCreationScreen {
                         cs.push(Span::styled(" ██ ", s));
                     }
                     lines.push(Line::from(cs));
+                    lines.push(Line::from("")); // bottom padding
                     let form = Paragraph::new(lines).block(
                         Block::default()
                             .borders(Borders::ALL)
@@ -480,8 +481,14 @@ impl CharacterCreationScreen {
                 _ => {}
             }
             let ft = match page {
-                0 | 1 => "Enter to continue   Esc back",
-                2 => "↑↓ section   ← → browse   Enter confirm",
+                0 => "Enter to continue",
+                1 => "Enter to continue   Shift+Enter back",
+                2 => match design_field {
+                    0 => "← → head shape   Enter to lock   Shift+Enter back",
+                    1 => "← → eyes   Enter to lock   Shift+Enter back",
+                    2 => "← → color   Enter to finish   Shift+Enter back",
+                    _ => "",
+                },
                 _ => "",
             };
             frame.render_widget(
@@ -502,6 +509,32 @@ impl CharacterCreationScreen {
                 if key.kind != KeyEventKind::Press {
                     return Ok(false);
                 }
+
+                // Shift+Enter goes backward on ALL pages
+                if key.code == KeyCode::Enter
+                    && key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::SHIFT)
+                {
+                    match self.form_page {
+                        0 => {} // Can't go back from first page
+                        1 => {
+                            self.form_page = 0;
+                            self.form_input = self.first_name.clone();
+                        }
+                        2 => {
+                            if self.design_field > 0 {
+                                self.design_field -= 1;
+                            } else {
+                                self.form_page = 1;
+                                self.form_input = self.last_name.clone();
+                            }
+                        }
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+
                 match self.form_page {
                     0 => match key.code {
                         KeyCode::Enter => {
@@ -530,26 +563,12 @@ impl CharacterCreationScreen {
                         KeyCode::Backspace => {
                             self.form_input.pop();
                         }
-                        KeyCode::Esc => {
-                            self.form_page = 0;
-                            self.form_input = self.first_name.clone();
-                        }
                         KeyCode::Char(c) => {
                             self.form_input.push(c);
                         }
                         _ => {}
                     },
                     2 => match key.code {
-                        KeyCode::Up => {
-                            if self.design_field > 0 {
-                                self.design_field -= 1;
-                            }
-                        }
-                        KeyCode::Down => {
-                            if self.design_field < 2 {
-                                self.design_field += 1;
-                            }
-                        }
                         KeyCode::Left => match self.design_field {
                             0 => {
                                 if self.head_selected > 0 {
@@ -586,12 +605,13 @@ impl CharacterCreationScreen {
                             }
                             _ => {}
                         },
+                        // Enter locks current row and advances to next
                         KeyCode::Enter => {
-                            return Ok(true);
-                        }
-                        KeyCode::Esc => {
-                            self.form_page = 1;
-                            self.form_input = self.last_name.clone();
+                            if self.design_field < 2 {
+                                self.design_field += 1;
+                            } else {
+                                return Ok(true); // Color confirmed = form complete
+                            }
                         }
                         _ => {}
                     },
