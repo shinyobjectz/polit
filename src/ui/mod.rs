@@ -75,6 +75,41 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Launch with a specific AI provider (e.g., real Gemma 4 model)
+pub fn run_app_with_provider(
+    provider: Box<dyn crate::ai::AiProvider>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let paths = GamePaths::init()?;
+    let has_save = paths
+        .saves
+        .read_dir()
+        .map(|mut d| d.next().is_some())
+        .unwrap_or(false);
+
+    let mut terminal = init_terminal();
+    let mut title = TitleScreen::new(has_save);
+    let action = title.run(&mut terminal)?;
+
+    match action {
+        TitleAction::Quit | TitleAction::Settings => {
+            restore_terminal();
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    let state = GameState::with_provider(paths.db.to_str().unwrap(), provider)?;
+    let channels = Channels::new();
+    let (ui_channels, game_channels) = channels.split();
+    let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+    let mut app_inst = app::App::new(ui_channels);
+    let result = app_inst.run(&mut terminal);
+    restore_terminal();
+    let _ = game_handle.join();
+    result
+}
+
 /// Launch directly into demo mode (skips title screen)
 pub fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;

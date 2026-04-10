@@ -1,17 +1,15 @@
+use super::quantized_gemma4 as qgemma;
 use candle_core::{DType, Device, Tensor};
-use candle_nn::VarBuilder;
 use candle_transformers::generation::{LogitsProcessor, Sampling};
-use candle_transformers::models::gemma4::config::Gemma4TextConfig;
-use candle_transformers::models::gemma4::text::TextModel;
-use hf_hub::{api::sync::Api, Repo, RepoType};
 use tokenizers::Tokenizer;
 
 use super::tools::DmResponse;
 use super::{AiProvider, DmMode};
 
-/// Candle-based provider for Gemma 4 models
+/// Candle-based provider loading quantized GGUF models.
+/// Uses quantized_gemma3 architecture which is compatible with Gemma 4 E2B GGUF.
 pub struct CandleProvider {
-    model: TextModel,
+    model: qgemma::ModelWeights,
     tokenizer: Tokenizer,
     device: Device,
     logits_processor: LogitsProcessor,
@@ -19,55 +17,43 @@ pub struct CandleProvider {
 }
 
 impl CandleProvider {
-    /// Load a Gemma 4 model from HuggingFace
-    /// model_id: "google/gemma-4-E2B-it" or "google/gemma-4-E4B-it"
-    pub fn load(
-        model_id: &str,
+    /// Load a GGUF model file directly
+    pub fn load_gguf(
+        gguf_path: &str,
+        tokenizer_repo: &str,
         hf_token: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        tracing::info!("Loading Gemma 4 model: {}", model_id);
+        let device = Device::Cpu;
 
+        tracing::info!("Loading GGUF model from: {}", gguf_path);
+
+        // Load GGUF file
+        let mut file = std::fs::File::open(gguf_path)?;
+        let gguf = candle_core::quantized::gguf_file::Content::read(&mut file)
+            .map_err(|e| format!("GGUF read error: {}", e))?;
+
+        let model = qgemma::ModelWeights::from_gguf(gguf, &mut file, &device)
+            .map_err(|e| format!("Model load error: {}", e))?;
+
+        tracing::info!("Model loaded from GGUF");
+
+        // Download tokenizer from HF
+        tracing::info!("Loading tokenizer from: {}", tokenizer_repo);
         let api = if let Some(token) = hf_token {
             hf_hub::api::sync::ApiBuilder::new()
                 .with_token(Some(token.to_string()))
                 .build()?
         } else {
-            Api::new()?
+            hf_hub::api::sync::Api::new()?
         };
-
-        let repo = api.repo(Repo::with_revision(
-            model_id.to_string(),
-            RepoType::Model,
+        let repo = api.repo(hf_hub::Repo::with_revision(
+            tokenizer_repo.to_string(),
+            hf_hub::RepoType::Model,
             "main".to_string(),
         ));
-
-        // Download tokenizer
-        tracing::info!("Downloading tokenizer...");
         let tokenizer_path = repo.get("tokenizer.json")?;
         let tokenizer =
             Tokenizer::from_file(tokenizer_path).map_err(|e| format!("Tokenizer error: {}", e))?;
-
-        // Download model weights
-        tracing::info!("Downloading model weights...");
-        let config_path = repo.get("config.json")?;
-        let raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&config_path)?)?;
-        let config: Gemma4TextConfig = if let Some(text_cfg) = raw.get("text_config") {
-            serde_json::from_value(text_cfg.clone())?
-        } else {
-            serde_json::from_value(raw)?
-        };
-
-        // Find safetensors files
-        let filenames = match Self::hub_load_safetensors(&repo) {
-            Ok(files) => files,
-            Err(_) => vec![repo.get("model.safetensors")?],
-        };
-
-        tracing::info!("Loading model into memory...");
-        let device = Device::Cpu; // Metal via feature flag
-        let dtype = DType::F32;
-        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
-        let model = TextModel::new(&config, vb)?;
 
         let logits_processor = LogitsProcessor::from_sampling(
             42,
@@ -77,43 +63,61 @@ impl CandleProvider {
             },
         );
 
-        tracing::info!("Model loaded successfully");
+        tracing::info!("Ready for inference");
 
         Ok(Self {
             model,
             tokenizer,
             device,
             logits_processor,
-            model_id: model_id.to_string(),
+            model_id: gguf_path.to_string(),
         })
     }
 
-    fn hub_load_safetensors(
-        repo: &hf_hub::api::sync::ApiRepo,
-    ) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error + Send + Sync>> {
-        let index_file = repo.get("model.safetensors.index.json")?;
-        let index_data: serde_json::Value = serde_json::from_slice(&std::fs::read(&index_file)?)?;
-        let weight_map = index_data
-            .get("weight_map")
-            .ok_or("No weight_map in index")?
-            .as_object()
-            .ok_or("weight_map not an object")?;
+    /// Load from HuggingFace model ID (downloads GGUF + tokenizer)
+    pub fn load(
+        model_id: &str,
+        hf_token: Option<&str>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let api = if let Some(token) = hf_token {
+            hf_hub::api::sync::ApiBuilder::new()
+                .with_token(Some(token.to_string()))
+                .build()?
+        } else {
+            hf_hub::api::sync::Api::new()?
+        };
 
-        let mut files: Vec<String> = weight_map
-            .values()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-        files.sort();
-        files.dedup();
+        // Determine GGUF repo and file based on model_id
+        let (gguf_repo, gguf_file, tokenizer_repo) = match model_id {
+            "google/gemma-4-E2B-it" | "gemma-4-e2b" => (
+                "unsloth/gemma-4-E2B-it-GGUF",
+                "gemma-4-E2B-it-Q4_K_M.gguf",
+                "google/gemma-4-E2B-it",
+            ),
+            "google/gemma-4-E4B-it" | "gemma-4-e4b" => (
+                "unsloth/gemma-4-E4B-it-GGUF",
+                "gemma-4-E4B-it-Q4_K_M.gguf",
+                "google/gemma-4-E4B-it",
+            ),
+            other => {
+                // Assume it's a direct repo with GGUF files
+                return Err(
+                    format!("Unknown model: {}. Use gemma-4-e2b or gemma-4-e4b", other).into(),
+                );
+            }
+        };
 
-        let paths: Vec<std::path::PathBuf> = files
-            .iter()
-            .map(|f| repo.get(f))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(paths)
+        tracing::info!("Resolving GGUF from: {}/{}", gguf_repo, gguf_file);
+        let repo = api.repo(hf_hub::Repo::with_revision(
+            gguf_repo.to_string(),
+            hf_hub::RepoType::Model,
+            "main".to_string(),
+        ));
+        let gguf_path = repo.get(gguf_file)?;
+
+        Self::load_gguf(gguf_path.to_str().unwrap(), tokenizer_repo, hf_token)
     }
 
-    /// Generate text from a prompt
     fn generate_text(
         &mut self,
         prompt: &str,
@@ -124,10 +128,12 @@ impl CandleProvider {
             .encode(prompt, true)
             .map_err(|e| format!("Tokenize error: {}", e))?;
         let mut tokens = encoding.get_ids().to_vec();
+        tracing::info!("Prompt tokens: {} tokens", tokens.len());
 
         let eos_token = self
             .tokenizer
-            .token_to_id("</s>")
+            .token_to_id("<end_of_turn>")
+            .or_else(|| self.tokenizer.token_to_id("</s>"))
             .or_else(|| self.tokenizer.token_to_id("<eos>"))
             .unwrap_or(1);
 
@@ -141,7 +147,6 @@ impl CandleProvider {
             let logits = self.model.forward(&input, start_pos)?;
             let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
 
-            // Apply repeat penalty
             let logits = if tokens.len() > 1 {
                 let start_at = tokens.len().saturating_sub(64);
                 candle_transformers::utils::apply_repeat_penalty(&logits, 1.1, &tokens[start_at..])?
@@ -178,40 +183,12 @@ impl AiProvider for CandleProvider {
     ) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
         let output = self.generate_text(prompt, 512)?;
 
-        // Try to parse as JSON DmResponse, fall back to plain narration
         match serde_json::from_str::<DmResponse>(&output) {
             Ok(response) => Ok(response),
-            Err(_) => {
-                // Model didn't produce structured JSON — wrap as narration
-                Ok(DmResponse {
-                    narration: output,
-                    tool_calls: vec![],
-                })
-            }
-        }
-    }
-}
-
-/// Available Gemma 4 models
-pub enum GemmaModel {
-    /// 2B effective params, fastest
-    E2B,
-    /// 4B effective params, better quality
-    E4B,
-}
-
-impl GemmaModel {
-    pub fn model_id(&self) -> &str {
-        match self {
-            GemmaModel::E2B => "google/gemma-4-E2B-it",
-            GemmaModel::E4B => "google/gemma-4-E4B-it",
-        }
-    }
-
-    pub fn display_name(&self) -> &str {
-        match self {
-            GemmaModel::E2B => "Gemma 4 E2B (2B params, fast)",
-            GemmaModel::E4B => "Gemma 4 E4B (4B params, recommended)",
+            Err(_) => Ok(DmResponse {
+                narration: output,
+                tool_calls: vec![],
+            }),
         }
     }
 }

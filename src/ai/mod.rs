@@ -1,6 +1,7 @@
 pub mod context;
 pub mod mock;
 pub mod provider;
+pub mod quantized_gemma4;
 pub mod tools;
 
 use tools::DmResponse;

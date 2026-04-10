@@ -55,6 +55,41 @@ pub enum EventPhaseType {
 }
 
 impl GameState {
+    /// Create with a specific AI provider
+    pub fn with_provider(
+        db_path: &str,
+        provider: Box<dyn crate::ai::AiProvider>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let db = Database::open(db_path)?;
+        let mut world = World::new();
+        let schedule = Schedule::default();
+
+        let config = config::GameConfig::load_from_home()
+            .unwrap_or_else(|_| config::GameConfig::default_config());
+
+        let ap = config.balance.action_points.local;
+
+        world.insert_resource(GameClock {
+            week: 1,
+            year: 2024,
+        });
+
+        Ok(Self {
+            world,
+            schedule,
+            week: 1,
+            year: 2024,
+            phase: GamePhase::TitleScreen,
+            db,
+            config,
+            ai: crate::ai::AiHarness::new(provider),
+            ap_current: ap,
+            ap_max: ap,
+            active_npc: None,
+        })
+    }
+
+    /// Create with mock AI (default)
     pub fn new(db_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let db = Database::open(db_path)?;
         let mut world = World::new();
