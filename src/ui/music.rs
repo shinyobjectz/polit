@@ -10,6 +10,7 @@ enum MusicCommand {
     SwitchToIntro,
     AdvanceSlide(usize),
     SwitchToAnthem,
+    SwitchToCharCreation,
     Shutdown,
 }
 
@@ -84,6 +85,11 @@ impl MusicController {
         let _ = self.cmd_tx.send(MusicCommand::SwitchToAnthem);
     }
 
+    /// Switch to the character creation score (plucky, ambient).
+    pub fn switch_to_char_creation(&self) {
+        let _ = self.cmd_tx.send(MusicCommand::SwitchToCharCreation);
+    }
+
     /// Shut down the audio thread completely.
     pub fn stop(&self) {
         let _ = self.cmd_tx.send(MusicCommand::Shutdown);
@@ -115,6 +121,11 @@ const EB4: f32 = 311.13;
 const F4: f32 = 349.23;
 const BB4: f32 = 466.16;
 const D5: f32 = 587.33;
+const E4: f32 = 329.63;
+const G4: f32 = 392.00;
+const A4: f32 = 440.00;
+const B4: f32 = 493.88;
+const C5: f32 = 523.25;
 const F5: f32 = 698.46;
 const BB5: f32 = 932.33;
 
@@ -406,6 +417,94 @@ fn compose_intro_slide_3() -> tunes::composition::Composition {
     comp
 }
 
+/// Character creation: plucky, simple God Bless America melody in C major.
+/// Light and cute — pizzicato feel, no heavy pads.
+fn compose_char_creation() -> tunes::composition::Composition {
+    use tunes::prelude::*;
+
+    // Gentle walking tempo — light and approachable
+    let mut comp = Composition::new(Tempo::new(65.0));
+
+    // ── Plucky melody: God Bless America chorus ─────────────────
+    comp.track("pluck")
+        .reverb(Reverb::new(0.3, 0.5, 0.2))
+        .filter(Filter::low_pass(2500.0, 0.3))
+        .volume(0.18)
+        // "God bless America, land that I love"
+        .note(&[C4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[G4], 1.5)
+        .note(&[F4], 0.5)
+        .note(&[E4], 1.0)
+        .note(&[D4], 2.0)
+        .note(&[D4], 1.0)
+        .note(&[F4], 1.0)
+        .note(&[A4], 1.5)
+        .note(&[G4], 3.0)
+        .wait(1.0)
+        // "Stand beside her and guide her"
+        .note(&[G4], 1.0)
+        .note(&[F4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[C4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[G4], 1.0)
+        .note(&[F4], 2.0)
+        // "Through the night with a light from above"
+        .note(&[F4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[D4], 1.0)
+        .note(&[D4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[F4], 1.0)
+        .note(&[G4], 1.0)
+        .note(&[A4], 1.0)
+        .note(&[G4], 2.0)
+        .wait(1.5)
+        // "From the mountains, to the prairies"
+        .note(&[C4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[G4], 1.5)
+        .note(&[C5], 0.5)
+        .note(&[B4], 1.0)
+        .note(&[A4], 1.0)
+        .note(&[A4], 1.5)
+        .note(&[B4], 0.5)
+        // "To the oceans white with foam"
+        .note(&[C5], 1.0)
+        .note(&[B4], 1.0)
+        .note(&[A4], 1.0)
+        .note(&[G4], 1.0)
+        .note(&[F4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[D4], 2.0)
+        .wait(1.0)
+        // "God bless America, my home sweet home"
+        .note(&[C4], 1.0)
+        .note(&[E4], 1.0)
+        .note(&[G4], 1.5)
+        .note(&[F4], 0.5)
+        .note(&[E4], 1.0)
+        .note(&[C5], 2.0)
+        .note(&[B4], 1.0)
+        .note(&[A4], 2.0)
+        .note(&[F4], 1.0)
+        .note(&[G4], 4.0);
+
+    // ── Soft single-note bass: just root tones ──────────────────
+    comp.track("bass")
+        .reverb(Reverb::new(0.2, 0.6, 0.15))
+        .filter(Filter::low_pass(300.0, 0.2))
+        .volume(0.05)
+        .note(&[C4 / 2.0], 12.0) // C3
+        .note(&[G3 / 2.0], 8.0) // G2 — wait, G3/2 = G2
+        .note(&[C4 / 2.0], 8.0)
+        .note(&[F3 / 2.0], 8.0)
+        .note(&[C4 / 2.0], 12.0);
+
+    comp
+}
+
 // ── Audio thread ────────────────────────────────────────────────────
 
 fn run_audio_thread(
@@ -418,6 +517,7 @@ fn run_audio_thread(
 
     // Pre-compose everything
     let anthem_mixer = compose_anthem().into_mixer();
+    let char_creation_mixer = compose_char_creation().into_mixer();
     let nav_sfx = compose_nav_sfx().into_mixer();
     let select_sfx = compose_select_sfx().into_mixer();
 
@@ -534,6 +634,20 @@ fn run_audio_thread(
                             0.0
                         } else {
                             0.5
+                        };
+                        engine.set_volume(id, vol).ok();
+                        current_loop = Some(id);
+                    }
+                }
+                Ok(MusicCommand::SwitchToCharCreation) => {
+                    if let Some(id) = current_loop.take() {
+                        engine.stop(id).ok();
+                    }
+                    if let Ok(id) = engine.play_looping(&char_creation_mixer) {
+                        let vol = if muted.load(Ordering::Relaxed) {
+                            0.0
+                        } else {
+                            0.45
                         };
                         engine.set_volume(id, vol).ok();
                         current_loop = Some(id);

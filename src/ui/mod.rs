@@ -69,13 +69,14 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = intro_screen.run(&mut terminal, &music);
             }
 
-            // Switch back to anthem for character creation
-            music.switch_to_anthem();
+            // Switch to character creation score
+            music.switch_to_char_creation();
 
             // Character creation (mock AI)
-            let mut mock_ai = crate::ai::mock::MockProvider::new();
+            let mock_provider: Box<dyn crate::ai::AiProvider> =
+                Box::new(crate::ai::mock::MockProvider::new());
             let mut char_screen = character_creation::CharacterCreationScreen::new();
-            let _character = char_screen.run(&mut terminal, &mut mock_ai, &music)?;
+            let _character = char_screen.run(&mut terminal, mock_provider, &music)?;
 
             // Stop music before entering the game
             music.stop();
@@ -149,18 +150,27 @@ pub fn run_app_with_provider(
                 let _ = intro_screen.run(&mut terminal, &music);
             }
 
-            // Switch back to anthem for character creation
-            music.switch_to_anthem();
+            // Switch to character creation score
+            music.switch_to_char_creation();
 
             // Character creation (AI-guided)
             let mut char_screen = character_creation::CharacterCreationScreen::new();
-            let _character = char_screen.run(&mut terminal, provider.as_mut(), &music)?;
+            let _character = char_screen.run(&mut terminal, provider, &music)?;
         }
         TitleAction::ContinueCampaign => {}
     }
 
     // Stop music before entering the game
     music.stop();
+
+    // Reload provider for game (model is cached, loads in ~5s)
+    eprintln!("Loading model for game...");
+    let hf_token = std::env::var("HF_TOKEN").ok();
+    let game_provider =
+        crate::ai::provider::CandleProvider::load("google/gemma-4-E2B-it", hf_token.as_deref())
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
+    eprintln!("Ready.");
+    let provider: Box<dyn crate::ai::AiProvider> = Box::new(game_provider);
 
     let state = GameState::with_provider(paths.db.to_str().unwrap(), provider)?;
     let channels = Channels::new();

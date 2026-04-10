@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod async_chat;
 pub mod context;
 pub mod memory;
 pub mod mock;

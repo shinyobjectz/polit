@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use super::chat::{ChatStream, NpcAvatar};
 use super::music::MusicController;
 use super::theme;
+use crate::ai::async_chat::{AiResponse, AsyncAiChat};
 use crate::ai::context::GameContext;
 use crate::ai::{AiProvider, DmMode};
 
@@ -146,7 +147,9 @@ pub struct CharacterCreationScreen {
     chat: ChatStream,
     input: String,
     character: CharacterData,
-    awaiting_response: bool,
+    async_ai: Option<AsyncAiChat>,
+    thinking: bool,
+    thinking_dots: u8, // animation: . .. ...
     creation_complete: bool,
     dm_question_count: u32,
 }
@@ -185,7 +188,9 @@ impl CharacterCreationScreen {
             chat: ChatStream::new(),
             input: String::new(),
             character: CharacterData::default(),
-            awaiting_response: false,
+            async_ai: None,
+            thinking: false,
+            thinking_dots: 0,
             creation_complete: false,
             dm_question_count: 0,
         }
@@ -194,16 +199,17 @@ impl CharacterCreationScreen {
     pub fn run(
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
-        ai: &mut dyn AiProvider,
+        provider: Box<dyn AiProvider>,
         music: &MusicController,
     ) -> Result<Option<CharacterData>, Box<dyn std::error::Error>> {
-        // Phase 1: Basic form
+        // Spawn async AI thread
+        let mut async_ai = AsyncAiChat::new(provider);
+
         loop {
             match self.phase {
                 CreationPhase::BasicForm => {
                     self.draw_form(terminal)?;
                     if self.handle_form_input()? {
-                        // Form complete — transition to AI chat
                         let full_name =
                             format!("{} {}", self.first_name.trim(), self.last_name.trim());
                         let avatar_face = build_avatar(self.head_selected, self.eyes_selected);
@@ -213,33 +219,59 @@ impl CharacterCreationScreen {
                         self.character
                             .set("avatar_color", &format!("{:?}", avatar_color));
 
-                        // Start AI chat with context
-                        let greeting = self.generate_ai_response(
-                            ai,
-                            &format!(
-                                "The player's name is {}. Greet them warmly by name and ask about their background — what did they do before entering politics?",
-                                full_name
-                            ),
+                        // Request AI greeting asynchronously
+                        let ctx = GameContext {
+                            tone_instructions: SYSTEM_PROMPT.to_string(),
+                            player_name: full_name.clone(),
+                            ..GameContext::default()
+                        };
+                        let prompt = ctx.build_prompt(
+                            &format!("The player's name is {}. Greet them warmly by name and ask about their background — what did they do before entering politics? Keep it to 2-3 sentences.", full_name),
+                            DmMode::Conversation,
                         );
-                        self.chat.add_npc(
-                            "DM",
-                            &greeting,
-                            Some(NpcAvatar {
-                                face: "◆◆".to_string(),
-                                color: Color::LightYellow,
-                                name: "DM".to_string(),
-                            }),
-                        );
-                        self.dm_question_count = 1; // Name already done
+                        async_ai.request_generation(&prompt, DmMode::Conversation);
+                        self.thinking = true;
+                        self.dm_question_count = 1;
                         self.phase = CreationPhase::AiChat;
                     }
                 }
                 CreationPhase::AiChat => {
                     if self.creation_complete {
+                        async_ai.shutdown();
                         return Ok(Some(self.character.clone()));
                     }
+
+                    // Poll for AI responses (non-blocking)
+                    if self.thinking {
+                        self.thinking_dots = ((self.frame_count / 10) % 4) as u8;
+                        if let Some(resp) = async_ai.poll_response() {
+                            match resp {
+                                AiResponse::Done(dm_resp) => {
+                                    self.thinking = false;
+                                    let narration = dm_resp.narration.clone();
+                                    self.parse_and_lock_fields("", &narration);
+                                    self.chat.add_npc(
+                                        "Narrator",
+                                        &narration,
+                                        Some(NpcAvatar {
+                                            face: "✦✦".to_string(),
+                                            color: theme::ACCENT,
+                                            name: "Narrator".to_string(),
+                                        }),
+                                    );
+                                }
+                                AiResponse::Error(e) => {
+                                    self.thinking = false;
+                                    self.chat.add_system(&format!("(AI error: {})", e));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    self.frame_count += 1;
                     self.draw(terminal)?;
-                    self.handle_input(ai, music)?;
+                    self.handle_chat_input(&mut async_ai, music)?;
                 }
             }
         }
@@ -622,37 +654,6 @@ impl CharacterCreationScreen {
         Ok(false)
     }
 
-    fn generate_ai_response(&mut self, ai: &mut dyn AiProvider, user_input: &str) -> String {
-        let ctx = GameContext {
-            tone_instructions: SYSTEM_PROMPT.to_string(),
-            ..GameContext::default()
-        };
-
-        // Build prompt with character context
-        let char_context = self
-            .character
-            .fields
-            .iter()
-            .map(|(k, v)| format!("{}: {}", k, v))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let full_prompt = if char_context.is_empty() {
-            user_input.to_string()
-        } else {
-            format!(
-                "Character so far: [{}]\n\nPlayer says: {}",
-                char_context, user_input
-            )
-        };
-
-        let prompt = ctx.build_prompt(&full_prompt, DmMode::Conversation);
-        match ai.generate(&prompt, DmMode::Conversation) {
-            Ok(response) => response.narration,
-            Err(_) => "Tell me about yourself. What's your name?".to_string(),
-        }
-    }
-
     fn parse_and_lock_fields(&mut self, user_input: &str, dm_response: &str) {
         let input_lower = user_input.to_lowercase();
         let q = self.dm_question_count;
@@ -728,6 +729,10 @@ impl CharacterCreationScreen {
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Show thinking indicator
+        let thinking = self.thinking;
+        let dots = ".".repeat((self.thinking_dots as usize % 3) + 1);
+
         // Pre-compute before borrowing chat mutably
         let depth = self.character.depth_percent();
         let depth_label = self.character.depth_label().to_string();
@@ -737,6 +742,32 @@ impl CharacterCreationScreen {
 
         let input_lines: Vec<&str> = input_str.split('\n').collect();
         let input_height = (input_lines.len() as u16 + 2).max(3).min(10);
+
+        // Add/remove thinking indicator from chat
+        if thinking {
+            // Remove old thinking indicator if present
+            if self
+                .chat
+                .messages
+                .last()
+                .map(|m| m.text.starts_with("✦ thinking"))
+                .unwrap_or(false)
+            {
+                self.chat.messages.pop();
+            }
+            self.chat.add_system(&format!("✦ thinking{}", dots));
+        } else {
+            // Remove thinking indicator when done
+            if self
+                .chat
+                .messages
+                .last()
+                .map(|m| m.text.starts_with("✦ thinking"))
+                .unwrap_or(false)
+            {
+                self.chat.messages.pop();
+            }
+        }
 
         let chat_height = terminal.size()?.height.saturating_sub(input_height + 4);
         let chat_widget = self.chat.render(chat_height);
@@ -856,9 +887,9 @@ impl CharacterCreationScreen {
         Ok(())
     }
 
-    fn handle_input(
+    fn handle_chat_input(
         &mut self,
-        ai: &mut dyn AiProvider,
+        async_ai: &mut AsyncAiChat,
         music: &MusicController,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -882,15 +913,18 @@ impl CharacterCreationScreen {
                     return Ok(());
                 }
 
+                // Don't accept input while AI is thinking
+                if self.thinking {
+                    return Ok(());
+                }
+
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                         self.creation_complete = true;
                     }
-                    // → to start game (when ready)
                     KeyCode::Right if self.input.is_empty() && self.character.can_start() => {
                         self.creation_complete = true;
                     }
-                    // Shift+Enter = newline
                     KeyCode::Enter if key.modifiers.contains(event::KeyModifiers::SHIFT) => {
                         self.input.push('\n');
                     }
@@ -901,7 +935,6 @@ impl CharacterCreationScreen {
                             self.input.clear();
                             self.dm_question_count += 1;
 
-                            // Show player input
                             self.chat.add_player(&input);
 
                             // Check if player wants to start
@@ -912,34 +945,49 @@ impl CharacterCreationScreen {
                                 && self.character.can_start()
                             {
                                 self.chat.add_npc(
-                                    "DM",
+                                    "Narrator",
                                     "Let's begin your story.",
                                     Some(NpcAvatar {
-                                        face: "◆◆".to_string(),
-                                        color: Color::LightYellow,
-                                        name: "DM".to_string(),
+                                        face: "✦✦".to_string(),
+                                        color: theme::ACCENT,
+                                        name: "Narrator".to_string(),
                                     }),
                                 );
                                 self.creation_complete = true;
                                 return Ok(());
                             }
 
-                            // Generate AI response
-                            let response = self.generate_ai_response(ai, &input);
+                            // Parse fields from user input
+                            self.parse_and_lock_fields(&input, "");
 
-                            // Parse and lock fields
-                            self.parse_and_lock_fields(&input, &response);
-
-                            // Show DM response
-                            self.chat.add_npc(
-                                "DM",
-                                &response,
-                                Some(NpcAvatar {
-                                    face: "◆◆".to_string(),
-                                    color: Color::LightYellow,
-                                    name: "DM".to_string(),
-                                }),
-                            );
+                            // Request AI response asynchronously
+                            let char_context = self
+                                .character
+                                .fields
+                                .iter()
+                                .map(|(k, v)| format!("{}: {}", k, v))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let ctx = GameContext {
+                                tone_instructions: SYSTEM_PROMPT.to_string(),
+                                player_name: self
+                                    .character
+                                    .get("name")
+                                    .unwrap_or("Player")
+                                    .to_string(),
+                                ..GameContext::default()
+                            };
+                            let full_prompt = if char_context.is_empty() {
+                                input.clone()
+                            } else {
+                                format!(
+                                    "Character so far: [{}]\n\nPlayer says: {}",
+                                    char_context, input
+                                )
+                            };
+                            let prompt = ctx.build_prompt(&full_prompt, DmMode::Conversation);
+                            async_ai.request_generation(&prompt, DmMode::Conversation);
+                            self.thinking = true;
                         }
                     }
                     KeyCode::Backspace => {
