@@ -1,6 +1,8 @@
 pub mod cards;
 pub mod dice;
 pub mod economy;
+#[cfg(feature = "simulation")]
+pub mod sim_bridge;
 pub mod sim_events;
 pub mod social_graph;
 pub mod world_delta;
