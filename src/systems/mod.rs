@@ -3,6 +3,7 @@ pub mod dice;
 pub mod economy;
 pub mod sim_events;
 pub mod social_graph;
+pub mod world_delta;
 
 // Future modules:
 // pub mod political;
