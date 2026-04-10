@@ -2,7 +2,8 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use super::chat::{ChatStream, NpcAvatar};
+use super::chat::ChatStream;
+use super::components;
 use super::theme;
 use crate::engine::channels::{UiChannels, UiCommand, UiMessage};
 
@@ -72,7 +73,7 @@ impl App {
             match msg {
                 UiMessage::Narrate(text) => self.chat.add_narration(&text),
                 UiMessage::NpcDialogue { name, text } => {
-                    let avatar = get_npc_avatar(&name);
+                    let avatar = components::avatar::get_npc_avatar(&name);
                     self.chat.add_npc(&name, &text, Some(avatar));
                 }
                 UiMessage::System(text) => self.chat.add_system(&text),
@@ -105,8 +106,12 @@ impl App {
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Pre-compute everything before borrowing chat mutably
-        let status = self.build_status_bar();
+        // Pre-compute
+        let week = self.week;
+        let year = self.year;
+        let phase = self.phase.clone();
+        let ap_current = self.ap_current;
+        let ap_max = self.ap_max;
         let input_str = self.input.clone();
         let showing_slash = self.showing_slash_menu;
         let filtered_cmds = self.filtered_commands();
@@ -127,25 +132,18 @@ impl App {
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(2),            // Status bar (full width)
                     Constraint::Min(3),               // Chat (centered)
                     Constraint::Length(input_height), // Input (dynamic height)
-                    Constraint::Length(1),            // Bottom margin
+                    Constraint::Length(2),            // Footer status bar
                 ])
                 .split(area);
 
-            // Status bar — FULL WIDTH
-            frame.render_widget(
-                status.clone().style(Style::default().bg(theme::BG_SUBTLE)),
-                layout[0],
-            );
-
             // Chat — centered column
-            let chat_area = theme::centered_content(layout[1]);
+            let chat_area = theme::centered_content(layout[0]);
             frame.render_widget(chat_widget, chat_area);
 
             // Input — floating card bar, centered, grows with content
-            let input_content_area = theme::centered_content(layout[2]);
+            let input_content_area = theme::centered_content(layout[1]);
             let input_block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme::ACCENT_BLUE))
@@ -227,35 +225,13 @@ impl App {
                 frame.render_widget(Clear, menu_area);
                 frame.render_widget(menu, menu_area);
             }
+
+            // Footer status bar (component)
+            components::status_bar::render_game(
+                frame, layout[2], week, year, &phase, ap_current, ap_max,
+            );
         })?;
         Ok(())
-    }
-
-    fn build_status_bar(&self) -> Paragraph<'static> {
-        let filled = "█".repeat(self.ap_current.max(0) as usize);
-        let empty = "░".repeat((self.ap_max - self.ap_current).max(0) as usize);
-
-        Paragraph::new(Line::from(vec![
-            Span::styled("  🇺🇸 ", Style::default()),
-            Span::styled("POLIT", Style::default().fg(theme::FG).bold()),
-            Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
-            Span::styled(
-                format!("Week {}, {}", self.week, self.year),
-                Style::default().fg(theme::FG_DIM),
-            ),
-            Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
-            Span::styled(self.phase.clone(), Style::default().fg(theme::FG)),
-            Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
-            Span::styled(
-                format!("AP {}{} ", filled, empty),
-                Style::default().fg(theme::FG_DIM),
-            ),
-            Span::styled(
-                format!("{}/{}", self.ap_current, self.ap_max),
-                Style::default().fg(theme::FG),
-            ),
-        ]))
-        .style(Style::default().bg(theme::BG_SUBTLE))
     }
 
     fn filtered_commands(&self) -> Vec<(String, String)> {
@@ -416,44 +392,5 @@ impl App {
             self.channels
                 .send(UiCommand::PlayerInput(input.to_string()));
         }
-    }
-}
-
-/// Get NPC avatar based on name
-fn get_npc_avatar(name: &str) -> NpcAvatar {
-    let lower = name.to_lowercase();
-    let (face, color) = if lower.contains("davis") {
-        ("°°", Color::Cyan)
-    } else if lower.contains("kowalski") {
-        ("──", Color::Yellow)
-    } else if lower.contains("martinez") {
-        ("^^", Color::Green)
-    } else if lower.contains("chen") {
-        ("¬¬", Color::Red)
-    } else if lower.contains("kim") {
-        ("••", Color::Magenta)
-    } else {
-        // Generate from name hash
-        let faces = ["••", "°°", "^^", "──", "¬¬", "◦◦", "∘∘", "··"];
-        let colors = [
-            Color::Cyan,
-            Color::Yellow,
-            Color::Green,
-            Color::Red,
-            Color::Magenta,
-            Color::LightBlue,
-            Color::LightGreen,
-            Color::LightRed,
-        ];
-        let hash = name
-            .bytes()
-            .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
-        (faces[hash % faces.len()], colors[hash % colors.len()])
-    };
-
-    NpcAvatar {
-        face: face.to_string(),
-        color,
-        name: name.to_string(),
     }
 }

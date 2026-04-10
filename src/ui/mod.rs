@@ -1,6 +1,7 @@
 pub mod app;
 pub mod character_creation;
 pub mod chat;
+pub mod components;
 pub mod intro;
 pub mod music;
 pub mod scenario;

@@ -836,14 +836,13 @@ impl CharacterCreationScreen {
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(2),            // Header (full width)
                     Constraint::Min(3),               // Chat (centered)
                     Constraint::Length(input_height), // Input (dynamic)
-                    Constraint::Length(1),            // Bottom margin
+                    Constraint::Length(2),            // Footer status bar
                 ])
                 .split(area);
 
-            // Header — FULL WIDTH, same style as game UI
+            // Footer status bar — FULL WIDTH
             let depth_bar_filled = (depth as f32 / 100.0 * 20.0) as usize;
             let depth_bar = format!(
                 "{}{}",
@@ -871,14 +870,14 @@ impl CharacterCreationScreen {
                 },
             ]))
             .style(Style::default().bg(theme::BG_SUBTLE));
-            frame.render_widget(header, layout[0]);
+            frame.render_widget(header, layout[2]); // Footer position
 
-            // Chat — centered column
-            let chat_area = theme::centered_content(layout[1]);
+            // Chat — centered column (layout[0] now)
+            let chat_area = theme::centered_content(layout[0]);
             frame.render_widget(chat_widget, chat_area);
 
-            // Input — floating card bar, same as game UI
-            let input_content_area = theme::centered_content(layout[2]);
+            // Input — floating card bar (layout[1] now)
+            let input_content_area = theme::centered_content(layout[1]);
             let input_block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme::ACCENT_BLUE))
@@ -910,47 +909,50 @@ impl CharacterCreationScreen {
             }
             frame.render_widget(Paragraph::new(lines), inner_area);
 
-            // Character sheet — floating to the right of the chat column
+            // Character sheet — floating to the right with gap
             if !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled) {
                 let filled_count = summary.iter().filter(|(_, _, f)| *f).count() as u16;
                 let block_height = (filled_count + 3).min(layout[1].height);
-                let block_width = 36;
-                // Position to the right of the centered chat column
-                let block_x = chat_area.right() + 2;
-                let block_y = layout[1].y + 1;
+                let block_width = 34;
+                // Position with generous gap (4 chars) from chat column
+                let block_x = chat_area.right() + 4;
+                let block_y = layout[1].y + 2;
                 // Only show if there's room to the right
-                let block_area = if block_x + block_width <= area.width {
-                    Rect::new(block_x, block_y, block_width, block_height)
-                } else {
-                    // Fallback: overlay top-right of chat
-                    Rect::new(
-                        chat_area.right().saturating_sub(block_width),
-                        block_y,
-                        block_width,
-                        block_height,
-                    )
-                };
+                if block_x + block_width <= area.width {
+                    let block_area = Rect::new(block_x, block_y, block_width, block_height);
 
-                let summary_lines: Vec<Line> = summary
-                    .iter()
-                    .filter(|(_, _, filled)| *filled)
-                    .map(|(key, value, _)| {
-                        Line::from(vec![
-                            Span::styled("✓ ", Style::default().fg(theme::SUCCESS)),
-                            Span::styled(format!("{}: ", key), Style::default().fg(theme::FG_DIM)),
-                            Span::styled(value, Style::default().fg(theme::FG)),
-                        ])
-                    })
-                    .collect();
+                    let summary_lines: Vec<Line> = summary
+                        .iter()
+                        .filter(|(_, _, filled)| *filled)
+                        .map(|(key, value, _)| {
+                            // Truncate long values to fit in the card
+                            let display_val = if value.len() > 20 {
+                                format!("{}…", &value[..19])
+                            } else {
+                                value.clone()
+                            };
+                            Line::from(vec![
+                                Span::styled("✓ ", Style::default().fg(theme::SUCCESS)),
+                                Span::styled(
+                                    format!("{}: ", key),
+                                    Style::default().fg(theme::FG_DIM),
+                                ),
+                                Span::styled(display_val, Style::default().fg(theme::FG)),
+                            ])
+                        })
+                        .collect();
 
-                let summary_block = Paragraph::new(summary_lines).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme::BORDER))
-                        .style(Style::default().bg(theme::BG_SUBTLE)),
-                );
-                frame.render_widget(ratatui::widgets::Clear, block_area);
-                frame.render_widget(summary_block, block_area);
+                    let summary_block = Paragraph::new(summary_lines).block(
+                        Block::default()
+                            .title(" Character ")
+                            .title_style(Style::default().fg(theme::FG_DIM))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(theme::BORDER))
+                            .style(Style::default().bg(theme::BG_SUBTLE)),
+                    );
+                    frame.render_widget(ratatui::widgets::Clear, block_area);
+                    frame.render_widget(summary_block, block_area);
+                }
             }
         })?;
         Ok(())
