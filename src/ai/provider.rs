@@ -1,3 +1,5 @@
+use std::os::unix::io::AsRawFd;
+
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -17,15 +19,38 @@ pub struct CandleProvider {
     model_id: String,
 }
 
+/// Suppress stderr (llama.cpp Metal shader spam), run closure, restore
+fn with_stderr_suppressed<T, F: FnOnce() -> T>(f: F) -> T {
+    let devnull = std::fs::File::open("/dev/null").ok();
+    let saved = unsafe { libc::dup(2) };
+    if let Some(ref null) = devnull {
+        unsafe {
+            libc::dup2(null.as_raw_fd(), 2);
+        }
+    }
+    let result = f();
+    if saved >= 0 {
+        unsafe {
+            libc::dup2(saved, 2);
+            libc::close(saved);
+        }
+    }
+    result
+}
+
 impl CandleProvider {
     pub fn load_gguf(gguf_path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         tracing::info!("Initializing llama.cpp backend...");
-        let backend = LlamaBackend::init().map_err(|e| format!("Backend init: {}", e))?;
+        let backend = with_stderr_suppressed(|| {
+            LlamaBackend::init().map_err(|e| format!("Backend init: {}", e))
+        })?;
 
         let model_params = LlamaModelParams::default();
         tracing::info!("Loading GGUF: {}", gguf_path);
-        let model = LlamaModel::load_from_file(&backend, gguf_path, &model_params)
-            .map_err(|e| format!("Model load: {}", e))?;
+        let model = with_stderr_suppressed(|| {
+            LlamaModel::load_from_file(&backend, gguf_path, &model_params)
+                .map_err(|e| format!("Model load: {}", e))
+        })?;
 
         tracing::info!("Model loaded!");
         Ok(Self {
@@ -81,10 +106,11 @@ impl CandleProvider {
             .with_n_threads(4)
             .with_n_threads_batch(4);
 
-        let mut ctx = self
-            .model
-            .new_context(&self.backend, ctx_params)
-            .map_err(|e| format!("Context: {}", e))?;
+        let mut ctx = with_stderr_suppressed(|| {
+            self.model
+                .new_context(&self.backend, ctx_params)
+                .map_err(|e| format!("Context: {}", e))
+        })?;
 
         let tokens = self
             .model
