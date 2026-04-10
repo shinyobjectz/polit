@@ -170,20 +170,30 @@ impl ScenarioScreen {
         let area = frame.area();
         frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
-        // Same layout as title screen
+        // Calculate the card height needed
+        let card_height = match self.phase {
+            Phase::PickEra => ERAS.len() as u16 * 3 + 3,
+            Phase::PickDifficulty => DIFFICULTIES.len() as u16 * 3 + 3,
+        };
+
+        // Total content block: title(2) + subtitle(2) + spacer(2) + card + footer spacing
+        let content_height = 2 + 2 + 2 + card_height;
+        let top_margin = area.height.saturating_sub(content_height + 4) / 3; // bias toward upper third
+
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(25), // top margin
-                Constraint::Length(2),      // POLIT title
-                Constraint::Length(2),      // subtitle
-                Constraint::Length(2),      // spacer
-                Constraint::Min(10),        // menu card (flexible)
-                Constraint::Length(2),      // footer
+                Constraint::Length(top_margin),  // computed margin
+                Constraint::Length(2),           // POLIT title
+                Constraint::Length(2),           // subtitle
+                Constraint::Length(2),           // spacer
+                Constraint::Length(card_height), // menu card (exact fit)
+                Constraint::Min(1),              // fill below
+                Constraint::Length(2),           // footer
             ])
             .split(area);
 
-        // POLIT header (same as title screen)
+        // POLIT header
         let title = Paragraph::new(Line::from(vec![
             Span::styled("🇺🇸 ", Style::default()),
             Span::styled("P O L I T", Style::default().fg(theme::FG).bold()),
@@ -191,7 +201,7 @@ impl ScenarioScreen {
         .alignment(Alignment::Center);
         frame.render_widget(title, layout[1]);
 
-        // Subtitle changes based on phase
+        // Subtitle
         let subtitle_text = match self.phase {
             Phase::PickEra => "Choose your era".to_string(),
             Phase::PickDifficulty => {
@@ -219,7 +229,7 @@ impl ScenarioScreen {
             Span::styled("Esc Back", Style::default().fg(theme::FG_MUTED)),
         ]))
         .alignment(Alignment::Center);
-        frame.render_widget(footer, layout[5]);
+        frame.render_widget(footer, layout[6]);
     }
 
     fn render_era_menu(&self, frame: &mut Frame, area: Rect) {
