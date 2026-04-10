@@ -1,4 +1,4 @@
-.PHONY: build test install run demo headless clean lint fmt check venv venv-update
+.PHONY: build test install run demo headless clean lint fmt check venv venv-update sim-test
 
 # === Development ===
 
@@ -86,6 +86,8 @@ info:
 	@echo "Source:  $$(pwd)"
 
 # === Python Simulation ===
+# Note: PyO3 needs Homebrew Python, not Xcode system Python.
+# Set PYO3_PYTHON=/opt/homebrew/bin/python3.12 if builds fail with dylib errors.
 
 venv:
 	python3 -m venv sim/.venv
@@ -93,6 +95,10 @@ venv:
 
 venv-update:
 	sim/.venv/bin/pip install -e sim/
+
+sim-test:
+	PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test --features simulation -- sim_bridge
+	/opt/homebrew/bin/python3.12 -m pytest sim/tests/ -v
 
 # === Debug ===
 
