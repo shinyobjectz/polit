@@ -28,8 +28,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let hf_token = std::env::var("HF_TOKEN").ok();
 
         eprintln!("Loading Gemma 4 model...");
-        let provider = ai::provider::CandleProvider::load(model_id, hf_token.as_deref())
-            .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
+
+        // Suppress llama.cpp Metal shader compilation noise on stderr
+        let provider = {
+            use std::os::unix::io::AsRawFd;
+            let devnull = std::fs::File::open("/dev/null").ok();
+            let saved_stderr = unsafe { libc::dup(2) };
+            if let Some(ref null) = devnull {
+                unsafe {
+                    libc::dup2(null.as_raw_fd(), 2);
+                }
+            }
+            let result = ai::provider::CandleProvider::load(model_id, hf_token.as_deref());
+            // Restore stderr
+            if saved_stderr >= 0 {
+                unsafe {
+                    libc::dup2(saved_stderr, 2);
+                    libc::close(saved_stderr);
+                }
+            }
+            result
+        }
+        .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
+
         eprintln!("Ready.");
 
         ui::run_app_with_provider(Box::new(provider))?;

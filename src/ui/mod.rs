@@ -1,5 +1,6 @@
 pub mod app;
 pub mod chat;
+pub mod intro;
 pub mod scenario;
 pub mod theme;
 pub mod title;
@@ -54,7 +55,12 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             }
             let _scenario_config = config.unwrap();
 
-            // TODO: cinematic intro here
+            // Cinematic intro
+            let intro_toml = include_str!("../../game/scenarios/modern_usa/intro.toml");
+            if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
+                let _ = intro_screen.run(&mut terminal);
+            }
+
             // TODO: character creation here
 
             let state = GameState::new(paths.db.to_str().unwrap())?;
@@ -111,7 +117,13 @@ pub fn run_app_with_provider(
                 return Ok(());
             }
             let _scenario_config = config.unwrap();
-            // TODO: intro + character creation
+
+            // Cinematic intro
+            let intro_toml = include_str!("../../game/scenarios/modern_usa/intro.toml");
+            if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
+                let _ = intro_screen.run(&mut terminal);
+            }
+            // TODO: character creation here
         }
         TitleAction::ContinueCampaign => {}
     }

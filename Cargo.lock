@@ -2043,6 +2043,7 @@ dependencies = [
  "crossbeam-channel",
  "crossterm",
  "hf-hub",
+ "libc",
  "llama-cpp-2",
  "petgraph",
  "rand 0.8.5",

@@ -1,0 +1,27 @@
+# Modern USA scenario intro slides
+# Each slide shows centered text with typewriter animation
+# → to advance after animation, Shift+Space to skip all
+
+[[slides]]
+text = "The year is 2024."
+
+[[slides]]
+text = """A nation at a crossroads.
+
+The economy teeters between growth and recession.
+Trust in institutions is at historic lows.
+And in towns across America, people are looking
+for new voices."""
+
+[[slides]]
+text = """But politics isn't just about grand speeches
+and sweeping legislation.
+
+It starts in a room. With a handshake.
+With a promise made to someone
+who needs to believe in something."""
+
+[[slides]]
+text = """This is your story.
+
+What kind of leader will you become?"""
