@@ -170,27 +170,29 @@ impl ScenarioScreen {
         let area = frame.area();
         frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
+        // Same layout as title screen
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(15),
-                Constraint::Length(2),
-                Constraint::Length(2),
-                Constraint::Length(1),
-                Constraint::Min(12),
-                Constraint::Length(2),
+                Constraint::Percentage(30), // top margin (same as title)
+                Constraint::Length(2),      // POLIT title
+                Constraint::Length(2),      // subtitle
+                Constraint::Length(3),      // spacer
+                Constraint::Length(8),      // menu card (fixed)
+                Constraint::Min(1),         // fill
+                Constraint::Length(2),      // footer
             ])
             .split(area);
 
-        // Title
-        let title = Paragraph::new(Line::from(Span::styled(
-            "N E W   G A M E",
-            Style::default().fg(theme::FG).bold(),
-        )))
+        // POLIT header (same as title screen)
+        let title = Paragraph::new(Line::from(vec![
+            Span::styled("🇺🇸 ", Style::default()),
+            Span::styled("P O L I T", Style::default().fg(theme::FG).bold()),
+        ]))
         .alignment(Alignment::Center);
         frame.render_widget(title, layout[1]);
 
-        // Subtitle (shows chosen era if in difficulty phase)
+        // Subtitle changes based on phase
         let subtitle_text = match self.phase {
             Phase::PickEra => "Choose your era".to_string(),
             Phase::PickDifficulty => {
@@ -205,7 +207,7 @@ impl ScenarioScreen {
         .alignment(Alignment::Center);
         frame.render_widget(subtitle, layout[2]);
 
-        // Menu
+        // Menu card
         match self.phase {
             Phase::PickEra => self.render_era_menu(frame, layout[4]),
             Phase::PickDifficulty => self.render_difficulty_menu(frame, layout[4]),
@@ -218,7 +220,7 @@ impl ScenarioScreen {
             Span::styled("Esc Back", Style::default().fg(theme::FG_MUTED)),
         ]))
         .alignment(Alignment::Center);
-        frame.render_widget(footer, layout[5]);
+        frame.render_widget(footer, layout[6]);
     }
 
     fn render_era_menu(&self, frame: &mut Frame, area: Rect) {
