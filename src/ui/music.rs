@@ -311,13 +311,14 @@ fn compose_select_sfx() -> tunes::composition::Composition {
     comp
 }
 
-/// Tiny percussive tick for typewriter effect — faint hi-hat.
+/// Dry click for typewriter — no reverb, no tail, just a tiny pop.
 fn compose_typewriter_tick() -> tunes::composition::Composition {
     use tunes::prelude::*;
-    let mut comp = Composition::new(Tempo::new(300.0));
+    let mut comp = Composition::new(Tempo::new(600.0));
     comp.track("tick")
-        .volume(0.04)
-        .drum(DrumType::HiHatClosed, 0.015);
+        .volume(0.025)
+        .filter(Filter::high_pass(4000.0, 0.1))
+        .note(&[8000.0], 0.008);
     comp
 }
 

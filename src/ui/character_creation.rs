@@ -123,12 +123,12 @@ impl CharacterCreationScreen {
             "Start the character creation. Ask for the player's name.",
         );
         self.chat.add_npc(
-            "Dungeon Master",
+            "DM",
             &greeting,
             Some(NpcAvatar {
                 face: "◆◆".to_string(),
                 color: Color::LightYellow,
-                name: "Dungeon Master".to_string(),
+                name: "DM".to_string(),
             }),
         );
 
@@ -248,13 +248,18 @@ impl CharacterCreationScreen {
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let chat_height = terminal.size()?.height.saturating_sub(5);
-        let chat_widget = self.chat.render(chat_height);
-        let input_str = self.input.clone();
+        // Pre-compute before borrowing chat mutably
         let depth = self.character.depth_percent();
         let depth_label = self.character.depth_label().to_string();
         let can_start = self.character.can_start();
+        let input_str = self.input.clone();
         let summary = self.character.summary_lines();
+
+        let input_lines: Vec<&str> = input_str.split('\n').collect();
+        let input_height = (input_lines.len() as u16 + 2).max(3).min(10);
+
+        let chat_height = terminal.size()?.height.saturating_sub(input_height + 4);
+        let chat_widget = self.chat.render(chat_height);
 
         terminal.draw(|frame| {
             let area = frame.area();
@@ -263,13 +268,14 @@ impl CharacterCreationScreen {
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(2), // Header
-                    Constraint::Min(5),    // Chat
-                    Constraint::Length(2), // Input
+                    Constraint::Length(2),            // Header (full width)
+                    Constraint::Min(3),               // Chat (centered)
+                    Constraint::Length(input_height), // Input (dynamic)
+                    Constraint::Length(1),            // Bottom margin
                 ])
                 .split(area);
 
-            // Header: "Character Creation" + depth meter
+            // Header — FULL WIDTH, same style as game UI
             let depth_bar_filled = (depth as f32 / 100.0 * 20.0) as usize;
             let depth_bar = format!(
                 "{}{}",
@@ -277,8 +283,11 @@ impl CharacterCreationScreen {
                 "░".repeat(20 - depth_bar_filled)
             );
             let header = Paragraph::new(Line::from(vec![
-                Span::styled("Character Creation", Style::default().fg(theme::FG).bold()),
-                Span::raw("  "),
+                Span::styled("  🇺🇸 ", Style::default()),
+                Span::styled("POLIT", Style::default().fg(theme::FG).bold()),
+                Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
+                Span::styled("Character Creation", Style::default().fg(theme::FG)),
+                Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
                 Span::styled(
                     format!("{} {} {}%", depth_label, depth_bar, depth),
                     Style::default().fg(if depth >= 30 {
@@ -288,44 +297,61 @@ impl CharacterCreationScreen {
                     }),
                 ),
                 if can_start {
-                    Span::styled("  → ready to begin", Style::default().fg(theme::SUCCESS))
+                    Span::styled("  → ready", Style::default().fg(theme::SUCCESS))
                 } else {
                     Span::raw("")
                 },
             ]))
-            .style(Style::default().bg(theme::BG));
+            .style(Style::default().bg(theme::BG_SUBTLE));
+            frame.render_widget(header, layout[0]);
 
-            let header_area = theme::centered_content(layout[0]);
-            frame.render_widget(header, header_area);
-
-            // Chat
+            // Chat — centered column
             let chat_area = theme::centered_content(layout[1]);
             frame.render_widget(chat_widget, chat_area);
 
-            // Input
-            let input_area = theme::centered_content(layout[2]);
-            let input_widget = Paragraph::new(Line::from(vec![
-                Span::styled("> ", Style::default().fg(theme::PLAYER_INPUT)),
-                Span::styled(&input_str, Style::default().fg(theme::FG)),
-                Span::styled(
-                    "▊",
-                    Style::default()
-                        .fg(theme::FG)
-                        .add_modifier(Modifier::SLOW_BLINK),
-                ),
-            ]))
-            .style(Style::default().bg(theme::BG));
-            frame.render_widget(input_widget, input_area);
+            // Input — floating card bar, same as game UI
+            let input_content_area = theme::centered_content(layout[2]);
+            let input_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::ACCENT_BLUE))
+                .style(Style::default().bg(theme::BG_HIGHLIGHT));
+            let inner_area = input_block.inner(input_content_area);
+            frame.render_widget(input_block, input_content_area);
 
-            // Character summary block (inline in chat area, bottom-right)
+            let mut lines: Vec<Line> = Vec::new();
+            for (i, line) in input_lines.iter().enumerate() {
+                let mut spans = Vec::new();
+                if i == 0 {
+                    spans.push(Span::styled("▶ ", Style::default().fg(theme::ACCENT)));
+                } else {
+                    spans.push(Span::styled("  ", Style::default()));
+                }
+                spans.push(Span::styled(
+                    line.to_string(),
+                    Style::default().fg(theme::FG),
+                ));
+                if i == input_lines.len() - 1 {
+                    spans.push(Span::styled(
+                        "▊",
+                        Style::default()
+                            .fg(theme::FG_DIM)
+                            .add_modifier(Modifier::SLOW_BLINK),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            frame.render_widget(Paragraph::new(lines), inner_area);
+
+            // Character summary block (bottom-right of chat area)
             if !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled) {
-                let block_height = summary.iter().filter(|(_, _, f)| *f).count() as u16 + 2;
-                let block_width = 40;
+                let filled_count = summary.iter().filter(|(_, _, f)| *f).count() as u16;
+                let block_height = filled_count + 2;
+                let block_width = 42;
                 let block_x = chat_area.right().saturating_sub(block_width + 1);
                 let block_y = layout[1].bottom().saturating_sub(block_height + 1);
                 let block_area = Rect::new(block_x, block_y, block_width, block_height);
 
-                let lines: Vec<Line> = summary
+                let summary_lines: Vec<Line> = summary
                     .iter()
                     .filter(|(_, _, filled)| *filled)
                     .map(|(key, value, _)| {
@@ -337,7 +363,7 @@ impl CharacterCreationScreen {
                     })
                     .collect();
 
-                let summary_block = Paragraph::new(lines).block(
+                let summary_block = Paragraph::new(summary_lines).block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(theme::BORDER))
@@ -380,6 +406,10 @@ impl CharacterCreationScreen {
                     KeyCode::Right if self.input.is_empty() && self.character.can_start() => {
                         self.creation_complete = true;
                     }
+                    // Shift+Enter = newline
+                    KeyCode::Enter if key.modifiers.contains(event::KeyModifiers::SHIFT) => {
+                        self.input.push('\n');
+                    }
                     KeyCode::Enter => {
                         if !self.input.is_empty() {
                             let input = self.input.clone();
@@ -397,12 +427,12 @@ impl CharacterCreationScreen {
                                 && self.character.can_start()
                             {
                                 self.chat.add_npc(
-                                    "Dungeon Master",
+                                    "DM",
                                     "Let's begin your story.",
                                     Some(NpcAvatar {
                                         face: "◆◆".to_string(),
                                         color: Color::LightYellow,
-                                        name: "Dungeon Master".to_string(),
+                                        name: "DM".to_string(),
                                     }),
                                 );
                                 self.creation_complete = true;
@@ -417,12 +447,12 @@ impl CharacterCreationScreen {
 
                             // Show DM response
                             self.chat.add_npc(
-                                "Dungeon Master",
+                                "DM",
                                 &response,
                                 Some(NpcAvatar {
                                     face: "◆◆".to_string(),
                                     color: Color::LightYellow,
-                                    name: "Dungeon Master".to_string(),
+                                    name: "DM".to_string(),
                                 }),
                             );
                         }

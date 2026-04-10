@@ -79,8 +79,12 @@ impl IntroScreen {
                         self.chars_revealed += 1;
                         self.last_char_time = now;
 
-                        // Subtle typewriter tick every 3rd character
-                        if self.chars_revealed % 3 == 0 {
+                        // Tick per character (skip whitespace)
+                        let ch = self.slides[self.current_slide]
+                            .text
+                            .chars()
+                            .nth(self.chars_revealed - 1);
+                        if ch.map_or(false, |c| !c.is_whitespace()) {
                             music.play_typewriter_tick();
                         }
                     } else {
