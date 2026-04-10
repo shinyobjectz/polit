@@ -311,14 +311,20 @@ fn compose_select_sfx() -> tunes::composition::Composition {
     comp
 }
 
-/// Dry click for typewriter — no reverb, no tail, just a tiny pop.
+/// Keyboard keystroke sound — short thud with a click transient.
 fn compose_typewriter_tick() -> tunes::composition::Composition {
     use tunes::prelude::*;
-    let mut comp = Composition::new(Tempo::new(600.0));
-    comp.track("tick")
-        .volume(0.025)
-        .filter(Filter::high_pass(4000.0, 0.1))
-        .note(&[8000.0], 0.008);
+    let mut comp = Composition::new(Tempo::new(120.0));
+    // Thud body — low short hit
+    comp.track("body")
+        .volume(0.5)
+        .filter(Filter::band_pass(400.0, 0.8))
+        .note(&[300.0], 0.06);
+    // Click transient — sharp high attack
+    comp.track("click")
+        .volume(0.3)
+        .filter(Filter::high_pass(2000.0, 0.3))
+        .note(&[5000.0], 0.02);
     comp
 }
 
@@ -409,7 +415,17 @@ fn run_audio_thread(
     let anthem_mixer = compose_anthem().into_mixer();
     let nav_sfx = compose_nav_sfx().into_mixer();
     let select_sfx = compose_select_sfx().into_mixer();
-    let tick_sfx = compose_typewriter_tick().into_mixer();
+
+    // Pre-render typewriter tick to a WAV sample for instant playback
+    let mut tick_mixer = compose_typewriter_tick().into_mixer();
+    let tick_path = std::env::temp_dir().join("polit_tick.wav");
+    let tick_path_str = tick_path
+        .to_str()
+        .unwrap_or("/tmp/polit_tick.wav")
+        .to_string();
+    tick_mixer.export_wav(&tick_path_str, 44100)?;
+    engine.preload_sample(&tick_path_str)?;
+
     let intro_slides: Vec<_> = vec![
         compose_intro_slide_0().into_mixer(),
         compose_intro_slide_1().into_mixer(),
@@ -449,7 +465,8 @@ fn run_audio_thread(
                 }
                 Ok(MusicCommand::PlayTypewriterTick) => {
                     if !muted.load(Ordering::Relaxed) {
-                        engine.play_mixer(&tick_sfx).ok();
+                        // play_sample on a preloaded WAV — fires on drop, near-zero latency
+                        engine.play_sample(&tick_path_str).volume(0.04);
                     }
                 }
                 Ok(MusicCommand::SwitchToIntro) => {
@@ -523,5 +540,7 @@ fn run_audio_thread(
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 
+    // Clean up temp sample file
+    let _ = std::fs::remove_file(&tick_path);
     Ok(())
 }

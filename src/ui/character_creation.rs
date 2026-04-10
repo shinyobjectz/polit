@@ -70,8 +70,37 @@ impl CharacterData {
     }
 }
 
+/// Available avatar options
+const AVATAR_OPTIONS: &[(&str, &str, Color)] = &[
+    ("[••]", "Alert", Color::Cyan),
+    ("[°°]", "Glasses", Color::LightBlue),
+    ("[^^]", "Friendly", Color::Green),
+    ("[──]", "Stern", Color::Yellow),
+    ("[¬¬]", "Skeptical", Color::Red),
+    ("(••)", "Soft", Color::Magenta),
+    ("(°°)", "Studious", Color::LightGreen),
+    ("(^^)", "Warm", Color::LightCyan),
+    ("{••}", "Sharp", Color::LightRed),
+    ("{°°}", "Focused", Color::LightYellow),
+    ("|••|", "Stoic", Color::White),
+    ("|──|", "Resolute", Color::Rgb(180, 140, 100)),
+];
+
+enum CreationPhase {
+    BasicForm, // First/last name + avatar pick
+    AiChat,    // AI-guided deeper creation
+}
+
 /// Character creation screen
 pub struct CharacterCreationScreen {
+    phase: CreationPhase,
+    // Basic form fields
+    form_field: usize, // 0=first, 1=last, 2=avatar
+    first_name: String,
+    last_name: String,
+    avatar_selected: usize,
+    form_input: String,
+    // AI chat phase
     chat: ChatStream,
     input: String,
     character: CharacterData,
@@ -100,10 +129,14 @@ When the player seems ready or says they want to start, say "Let's begin your st
 
 impl CharacterCreationScreen {
     pub fn new() -> Self {
-        let mut chat = ChatStream::new();
-        chat.add_system("Character Creation");
         Self {
-            chat,
+            phase: CreationPhase::BasicForm,
+            form_field: 0,
+            first_name: String::new(),
+            last_name: String::new(),
+            avatar_selected: 0,
+            form_input: String::new(),
+            chat: ChatStream::new(),
             input: String::new(),
             character: CharacterData::default(),
             awaiting_response: false,
@@ -117,29 +150,296 @@ impl CharacterCreationScreen {
         terminal: &mut ratatui::DefaultTerminal,
         ai: &mut dyn AiProvider,
     ) -> Result<Option<CharacterData>, Box<dyn std::error::Error>> {
-        // Initial DM greeting
-        let greeting = self.generate_ai_response(
-            ai,
-            "Start the character creation. Ask for the player's name.",
-        );
-        self.chat.add_npc(
-            "DM",
-            &greeting,
-            Some(NpcAvatar {
-                face: "◆◆".to_string(),
-                color: Color::LightYellow,
-                name: "DM".to_string(),
-            }),
-        );
-
+        // Phase 1: Basic form
         loop {
-            if self.creation_complete {
-                return Ok(Some(self.character.clone()));
+            match self.phase {
+                CreationPhase::BasicForm => {
+                    self.draw_form(terminal)?;
+                    if self.handle_form_input()? {
+                        // Form complete — transition to AI chat
+                        let full_name =
+                            format!("{} {}", self.first_name.trim(), self.last_name.trim());
+                        let (face, _, color) = AVATAR_OPTIONS[self.avatar_selected];
+                        self.character.set("name", &full_name);
+                        self.character.set("avatar_face", face);
+                        self.character.set("avatar_color", &format!("{:?}", color));
+
+                        // Start AI chat with context
+                        let greeting = self.generate_ai_response(
+                            ai,
+                            &format!(
+                                "The player's name is {}. Greet them warmly by name and ask about their background — what did they do before entering politics?",
+                                full_name
+                            ),
+                        );
+                        self.chat.add_npc(
+                            "DM",
+                            &greeting,
+                            Some(NpcAvatar {
+                                face: "◆◆".to_string(),
+                                color: Color::LightYellow,
+                                name: "DM".to_string(),
+                            }),
+                        );
+                        self.dm_question_count = 1; // Name already done
+                        self.phase = CreationPhase::AiChat;
+                    }
+                }
+                CreationPhase::AiChat => {
+                    if self.creation_complete {
+                        return Ok(Some(self.character.clone()));
+                    }
+                    self.draw(terminal)?;
+                    self.handle_input(ai)?;
+                }
+            }
+        }
+    }
+
+    fn draw_form(
+        &self,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let first = self.first_name.clone();
+        let last = self.last_name.clone();
+        let field = self.form_field;
+        let input = self.form_input.clone();
+        let avatar_sel = self.avatar_selected;
+
+        terminal.draw(|frame| {
+            let area = frame.area();
+            frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
+
+            // Calculate content block height
+            let content_height = 20u16;
+            let top_margin = area.height.saturating_sub(content_height + 4) / 3;
+
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(top_margin),
+                    Constraint::Length(2),              // POLIT header
+                    Constraint::Length(2),              // Subtitle
+                    Constraint::Length(2),              // Spacer
+                    Constraint::Length(content_height), // Form
+                    Constraint::Min(1),                 // Fill
+                    Constraint::Length(2),              // Footer
+                ])
+                .split(area);
+
+            // POLIT header
+            let title = Paragraph::new(Line::from(vec![
+                Span::styled("🇺🇸 ", Style::default()),
+                Span::styled("P O L I T", Style::default().fg(theme::FG).bold()),
+            ]))
+            .alignment(Alignment::Center);
+            frame.render_widget(title, layout[1]);
+
+            let subtitle = Paragraph::new(Line::from(Span::styled(
+                "Create Your Character",
+                Style::default().fg(theme::FG_DIM),
+            )))
+            .alignment(Alignment::Center);
+            frame.render_widget(subtitle, layout[2]);
+
+            // Form card
+            let card_width = 50u16;
+            let card_x = area.x + (area.width.saturating_sub(card_width)) / 2;
+            let card_area = Rect::new(card_x, layout[4].y, card_width, content_height);
+
+            let mut lines: Vec<Line> = vec![Line::from("")];
+
+            // First Name field
+            let first_style = if field == 0 {
+                Style::default().fg(theme::FG).bold()
+            } else {
+                Style::default().fg(theme::FG_DIM)
+            };
+            lines.push(Line::from(Span::styled(
+                "    First Name",
+                Style::default().fg(theme::FG_DIM),
+            )));
+            if field == 0 {
+                lines.push(Line::from(vec![
+                    Span::styled("    ▶ ", Style::default().fg(theme::ACCENT)),
+                    Span::styled(&input, first_style),
+                    Span::styled(
+                        "▊",
+                        Style::default()
+                            .fg(theme::FG_DIM)
+                            .add_modifier(Modifier::SLOW_BLINK),
+                    ),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("      ", Style::default()),
+                    Span::styled(if first.is_empty() { "..." } else { &first }, first_style),
+                ]));
+            }
+            lines.push(Line::from(""));
+
+            // Last Name field
+            let last_style = if field == 1 {
+                Style::default().fg(theme::FG).bold()
+            } else {
+                Style::default().fg(theme::FG_DIM)
+            };
+            lines.push(Line::from(Span::styled(
+                "    Last Name",
+                Style::default().fg(theme::FG_DIM),
+            )));
+            if field == 1 {
+                lines.push(Line::from(vec![
+                    Span::styled("    ▶ ", Style::default().fg(theme::ACCENT)),
+                    Span::styled(&input, last_style),
+                    Span::styled(
+                        "▊",
+                        Style::default()
+                            .fg(theme::FG_DIM)
+                            .add_modifier(Modifier::SLOW_BLINK),
+                    ),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("      ", Style::default()),
+                    Span::styled(if last.is_empty() { "..." } else { &last }, last_style),
+                ]));
+            }
+            lines.push(Line::from(""));
+
+            // Avatar picker
+            lines.push(Line::from(Span::styled(
+                "    Choose Your Face",
+                Style::default().fg(theme::FG_DIM),
+            )));
+            lines.push(Line::from(""));
+
+            if field == 2 {
+                // Show avatar grid
+                let mut avatar_line = vec![Span::styled("    ", Style::default())];
+                for (i, (face, label, color)) in AVATAR_OPTIONS.iter().enumerate() {
+                    if i == avatar_sel {
+                        avatar_line.push(Span::styled(
+                            format!(" [{}] ", face),
+                            Style::default().fg(*color).bold().bg(theme::BG_HIGHLIGHT),
+                        ));
+                    } else {
+                        avatar_line.push(Span::styled(
+                            format!("  {}  ", face),
+                            Style::default().fg(*color),
+                        ));
+                    }
+                }
+                lines.push(Line::from(avatar_line));
+
+                // Label for selected
+                let (_, label, _) = AVATAR_OPTIONS[avatar_sel];
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("    ", Style::default()),
+                    Span::styled(
+                        format!("← → to browse   Selected: {}", label),
+                        Style::default().fg(theme::FG_DIM),
+                    ),
+                ]));
+            } else {
+                let (face, _, color) = AVATAR_OPTIONS[avatar_sel];
+                lines.push(Line::from(vec![
+                    Span::styled("      ", Style::default()),
+                    Span::styled(face.to_string(), Style::default().fg(color)),
+                ]));
             }
 
-            self.draw(terminal)?;
-            self.handle_input(ai)?;
+            let form = Paragraph::new(lines).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme::BORDER))
+                    .style(Style::default().bg(theme::BG_SUBTLE)),
+            );
+            frame.render_widget(ratatui::widgets::Clear, card_area);
+            frame.render_widget(form, card_area);
+
+            // Footer
+            let footer_text = match field {
+                0 | 1 => "Enter to confirm   Esc to go back",
+                2 => "← → to browse   Enter to confirm",
+                _ => "",
+            };
+            let footer = Paragraph::new(Line::from(Span::styled(
+                footer_text,
+                Style::default().fg(theme::FG_MUTED),
+            )))
+            .alignment(Alignment::Center);
+            frame.render_widget(footer, layout[6]);
+        })?;
+        Ok(())
+    }
+
+    /// Handle input for the basic form. Returns true when form is complete.
+    fn handle_form_input(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+        if crossterm::event::poll(std::time::Duration::from_millis(50))? {
+            if let Event::Key(key) = crossterm::event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    return Ok(false);
+                }
+                match self.form_field {
+                    // Text input fields (first name, last name)
+                    0 | 1 => match key.code {
+                        KeyCode::Enter => {
+                            if !self.form_input.is_empty() {
+                                if self.form_field == 0 {
+                                    self.first_name = self.form_input.clone();
+                                } else {
+                                    self.last_name = self.form_input.clone();
+                                }
+                                self.form_input.clear();
+                                self.form_field += 1;
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            self.form_input.pop();
+                        }
+                        KeyCode::Esc => {
+                            if self.form_field > 0 {
+                                self.form_field -= 1;
+                                self.form_input = if self.form_field == 0 {
+                                    self.first_name.clone()
+                                } else {
+                                    self.last_name.clone()
+                                };
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            self.form_input.push(c);
+                        }
+                        _ => {}
+                    },
+                    // Avatar picker
+                    2 => match key.code {
+                        KeyCode::Left => {
+                            if self.avatar_selected > 0 {
+                                self.avatar_selected -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if self.avatar_selected < AVATAR_OPTIONS.len() - 1 {
+                                self.avatar_selected += 1;
+                            }
+                        }
+                        KeyCode::Enter => {
+                            return Ok(true); // Form complete
+                        }
+                        KeyCode::Esc => {
+                            self.form_field = 1;
+                            self.form_input = self.last_name.clone();
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
         }
+        Ok(false)
     }
 
     fn generate_ai_response(&mut self, ai: &mut dyn AiProvider, user_input: &str) -> String {
