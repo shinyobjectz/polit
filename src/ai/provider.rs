@@ -1,80 +1,40 @@
-use super::quantized_gemma4 as qgemma;
-use candle_core::{DType, Device, Tensor};
-use candle_transformers::generation::{LogitsProcessor, Sampling};
-use tokenizers::Tokenizer;
+use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::llama_backend::LlamaBackend;
+use llama_cpp_2::llama_batch::LlamaBatch;
+use llama_cpp_2::model::params::LlamaModelParams;
+use llama_cpp_2::model::{LlamaModel, Special};
+use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::data_array::LlamaTokenDataArray;
+use std::num::NonZeroU32;
 
 use super::tools::DmResponse;
 use super::{AiProvider, DmMode};
 
-/// Candle-based provider loading quantized GGUF models.
-/// Uses quantized_gemma3 architecture which is compatible with Gemma 4 E2B GGUF.
+/// llama.cpp-based provider for Gemma 4 GGUF models.
 pub struct CandleProvider {
-    model: qgemma::ModelWeights,
-    tokenizer: Tokenizer,
-    device: Device,
-    logits_processor: LogitsProcessor,
+    model: LlamaModel,
+    backend: LlamaBackend,
     model_id: String,
 }
 
 impl CandleProvider {
-    /// Load a GGUF model file directly
-    pub fn load_gguf(
-        gguf_path: &str,
-        tokenizer_repo: &str,
-        hf_token: Option<&str>,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let device = Device::Cpu;
+    pub fn load_gguf(gguf_path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        tracing::info!("Initializing llama.cpp backend...");
+        let backend = LlamaBackend::init().map_err(|e| format!("Backend init: {}", e))?;
 
-        tracing::info!("Loading GGUF model from: {}", gguf_path);
+        let model_params = LlamaModelParams::default();
+        tracing::info!("Loading GGUF: {}", gguf_path);
+        let model = LlamaModel::load_from_file(&backend, gguf_path, &model_params)
+            .map_err(|e| format!("Model load: {}", e))?;
 
-        // Load GGUF file
-        let mut file = std::fs::File::open(gguf_path)?;
-        let gguf = candle_core::quantized::gguf_file::Content::read(&mut file)
-            .map_err(|e| format!("GGUF read error: {}", e))?;
-
-        let model = qgemma::ModelWeights::from_gguf(gguf, &mut file, &device)
-            .map_err(|e| format!("Model load error: {}", e))?;
-
-        tracing::info!("Model loaded from GGUF");
-
-        // Download tokenizer from HF
-        tracing::info!("Loading tokenizer from: {}", tokenizer_repo);
-        let api = if let Some(token) = hf_token {
-            hf_hub::api::sync::ApiBuilder::new()
-                .with_token(Some(token.to_string()))
-                .build()?
-        } else {
-            hf_hub::api::sync::Api::new()?
-        };
-        let repo = api.repo(hf_hub::Repo::with_revision(
-            tokenizer_repo.to_string(),
-            hf_hub::RepoType::Model,
-            "main".to_string(),
-        ));
-        let tokenizer_path = repo.get("tokenizer.json")?;
-        let tokenizer =
-            Tokenizer::from_file(tokenizer_path).map_err(|e| format!("Tokenizer error: {}", e))?;
-
-        let logits_processor = LogitsProcessor::from_sampling(
-            42,
-            Sampling::TopK {
-                k: 40,
-                temperature: 0.7,
-            },
-        );
-
-        tracing::info!("Ready for inference");
-
+        tracing::info!("Model loaded!");
         Ok(Self {
             model,
-            tokenizer,
-            device,
-            logits_processor,
+            backend,
             model_id: gguf_path.to_string(),
         })
     }
 
-    /// Load from HuggingFace model ID (downloads GGUF + tokenizer)
     pub fn load(
         model_id: &str,
         hf_token: Option<&str>,
@@ -87,85 +47,108 @@ impl CandleProvider {
             hf_hub::api::sync::Api::new()?
         };
 
-        // Determine GGUF repo and file based on model_id
-        let (gguf_repo, gguf_file, tokenizer_repo) = match model_id {
-            "google/gemma-4-E2B-it" | "gemma-4-e2b" => (
-                "unsloth/gemma-4-E2B-it-GGUF",
-                "gemma-4-E2B-it-Q4_K_M.gguf",
-                "google/gemma-4-E2B-it",
-            ),
-            "google/gemma-4-E4B-it" | "gemma-4-e4b" => (
-                "unsloth/gemma-4-E4B-it-GGUF",
-                "gemma-4-E4B-it-Q4_K_M.gguf",
-                "google/gemma-4-E4B-it",
-            ),
+        let (gguf_repo, gguf_file) = match model_id {
+            "google/gemma-4-E2B-it" | "gemma-4-e2b" => {
+                ("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q4_K_M.gguf")
+            }
+            "google/gemma-4-E4B-it" | "gemma-4-e4b" => {
+                ("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf")
+            }
             other => {
-                // Assume it's a direct repo with GGUF files
                 return Err(
                     format!("Unknown model: {}. Use gemma-4-e2b or gemma-4-e4b", other).into(),
                 );
             }
         };
 
-        tracing::info!("Resolving GGUF from: {}/{}", gguf_repo, gguf_file);
+        tracing::info!("Resolving GGUF: {}/{}", gguf_repo, gguf_file);
         let repo = api.repo(hf_hub::Repo::with_revision(
             gguf_repo.to_string(),
             hf_hub::RepoType::Model,
             "main".to_string(),
         ));
         let gguf_path = repo.get(gguf_file)?;
-
-        Self::load_gguf(gguf_path.to_str().unwrap(), tokenizer_repo, hf_token)
+        Self::load_gguf(gguf_path.to_str().unwrap())
     }
 
     fn generate_text(
-        &mut self,
+        &self,
         prompt: &str,
         max_tokens: usize,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let encoding = self
-            .tokenizer
-            .encode(prompt, true)
-            .map_err(|e| format!("Tokenize error: {}", e))?;
-        let mut tokens = encoding.get_ids().to_vec();
-        tracing::info!("Prompt tokens: {} tokens", tokens.len());
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(2048))
+            .with_n_threads(4)
+            .with_n_threads_batch(4);
 
-        let eos_token = self
-            .tokenizer
-            .token_to_id("<end_of_turn>")
-            .or_else(|| self.tokenizer.token_to_id("</s>"))
-            .or_else(|| self.tokenizer.token_to_id("<eos>"))
-            .unwrap_or(1);
+        let mut ctx = self
+            .model
+            .new_context(&self.backend, ctx_params)
+            .map_err(|e| format!("Context: {}", e))?;
 
-        let mut generated = Vec::new();
+        let tokens = self
+            .model
+            .str_to_token(prompt, llama_cpp_2::model::AddBos::Always)
+            .map_err(|e| format!("Tokenize: {}", e))?;
 
-        for index in 0..max_tokens {
-            let context_size = if index > 0 { 1 } else { tokens.len() };
-            let start_pos = tokens.len().saturating_sub(context_size);
-            let ctxt = &tokens[start_pos..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input, start_pos)?;
-            let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
+        tracing::info!(
+            "Prompt: {} tokens, generating up to {}",
+            tokens.len(),
+            max_tokens
+        );
 
-            let logits = if tokens.len() > 1 {
-                let start_at = tokens.len().saturating_sub(64);
-                candle_transformers::utils::apply_repeat_penalty(&logits, 1.1, &tokens[start_at..])?
-            } else {
-                logits
-            };
+        // Evaluate prompt
+        let mut batch = LlamaBatch::new(tokens.len().max(1), 1);
+        for (i, &token) in tokens.iter().enumerate() {
+            let is_last = i == tokens.len() - 1;
+            batch
+                .add(token, i as i32, &[0], is_last)
+                .map_err(|e| format!("Batch: {}", e))?;
+        }
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("Decode prompt: {}", e))?;
 
-            let next_token = self.logits_processor.sample(&logits)?;
-            if next_token == eos_token {
+        // Set up sampler: temp → top-k → top-p → dist
+        let mut sampler = LlamaSampler::chain_simple([
+            LlamaSampler::temp(0.7),
+            LlamaSampler::top_k(40),
+            LlamaSampler::top_p(0.9, 1),
+            LlamaSampler::dist(42),
+        ]);
+
+        // Generate
+        let mut output_tokens = Vec::new();
+        let mut n_cur = tokens.len() as i32;
+
+        for _ in 0..max_tokens {
+            let new_token = sampler.sample(&ctx, batch.n_tokens() - 1);
+            sampler.accept(new_token);
+
+            if self.model.is_eog_token(new_token) {
                 break;
             }
-            tokens.push(next_token);
-            generated.push(next_token);
+
+            output_tokens.push(new_token);
+
+            batch.clear();
+            batch
+                .add(new_token, n_cur, &[0], true)
+                .map_err(|e| format!("Batch gen: {}", e))?;
+
+            ctx.decode(&mut batch)
+                .map_err(|e| format!("Decode gen: {}", e))?;
+
+            n_cur += 1;
         }
 
-        let text = self
-            .tokenizer
-            .decode(&generated, true)
-            .map_err(|e| format!("Decode error: {}", e))?;
+        // Detokenize
+        let mut text = String::new();
+        for &token in &output_tokens {
+            match self.model.token_to_str(token, Special::Tokenize) {
+                Ok(s) => text.push_str(&s),
+                Err(_) => {} // skip special tokens
+            }
+        }
 
         Ok(text)
     }
