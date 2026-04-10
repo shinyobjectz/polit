@@ -43,24 +43,6 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             restore_terminal();
             return Ok(());
         }
-        TitleAction::Demo => {
-            let state = GameState::new(paths.db.to_str().unwrap())?;
-            let channels = Channels::new();
-            let (ui_channels, game_channels) = channels.split();
-
-            let game_handle = std::thread::Builder::new()
-                .name("polit-demo".to_string())
-                .spawn(move || {
-                    demo::run_demo(state, game_channels);
-                })
-                .expect("Failed to spawn demo thread");
-
-            let mut app_inst = app::App::new(ui_channels);
-            let result = app_inst.run(&mut terminal);
-            restore_terminal();
-            let _ = game_handle.join();
-            return result;
-        }
         TitleAction::NewCampaign | TitleAction::ContinueCampaign => {
             let state = GameState::new(paths.db.to_str().unwrap())?;
             let channels = Channels::new();
