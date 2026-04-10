@@ -20,8 +20,12 @@ pub struct GameState {
     pub year: u32,
     pub phase: GamePhase,
     pub db: Database,
+    pub config: config::GameConfig,
+    pub ai: crate::ai::AiHarness,
     ap_current: i32,
     ap_max: i32,
+    /// NPC currently in conversation with (if any)
+    pub active_npc: Option<String>,
 }
 
 /// Current phase of the game loop
@@ -56,6 +60,11 @@ impl GameState {
         let mut world = World::new();
         let schedule = Schedule::default();
 
+        let config = config::GameConfig::load_from_home()
+            .unwrap_or_else(|_| config::GameConfig::default_config());
+
+        let ap = config.balance.action_points.local;
+
         world.insert_resource(GameClock {
             week: 1,
             year: 2024,
@@ -68,8 +77,11 @@ impl GameState {
             year: 2024,
             phase: GamePhase::TitleScreen,
             db,
-            ap_current: 5,
-            ap_max: 5,
+            config,
+            ai: crate::ai::AiHarness::mock(),
+            ap_current: ap,
+            ap_max: ap,
+            active_npc: None,
         })
     }
 

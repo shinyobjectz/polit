@@ -167,10 +167,10 @@ pub fn run_demo(mut state: GameState, ch: GameChannels) {
     ch.send(UiMessage::PhaseHeader("5. TOML Config System".into()));
     thread::sleep(short);
 
-    match super::config::GameConfig::load("game/config") {
+    match super::config::GameConfig::load_from_home() {
         Ok(config) => {
             ch.send(UiMessage::Success(
-                "Loaded game/config/balance.toml + difficulty.toml".into(),
+                "Loaded ~/.polit/config/balance.toml + difficulty.toml".into(),
             ));
             ch.send(UiMessage::Narrate(format!(
                 "  AP by office: local={}, president={}",

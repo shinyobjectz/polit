@@ -91,6 +91,75 @@ pub struct DifficultyMode {
 }
 
 impl GameConfig {
+    /// Load from ~/.polit/config/
+    pub fn load_from_home() -> Result<Self, Box<dyn std::error::Error>> {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let config_dir = format!("{}/.polit/config", home);
+        Self::load(&config_dir)
+    }
+
+    /// Hardcoded defaults when no config files exist
+    pub fn default_config() -> Self {
+        Self {
+            balance: BalanceConfig {
+                action_points: ActionPointsConfig {
+                    local: 5,
+                    state: 7,
+                    federal_house: 8,
+                    federal_senate: 9,
+                    governor: 9,
+                    president: 12,
+                    bureaucratic_low: 5,
+                    bureaucratic_high: 8,
+                },
+                action_costs: ActionCostsConfig {
+                    meet_in_person: 2,
+                    phone_call: 1,
+                    speech: 1,
+                    campaign: 2,
+                    draft_legislation: 0,
+                    research: 1,
+                    scheme: 2,
+                    press_conference: 1,
+                },
+                dice: DiceConfig {
+                    sides: 20,
+                    crit_success: 20,
+                    crit_failure: 1,
+                },
+                cards: CardsConfig {
+                    max_deck_size: 30,
+                    evolution_threshold: 10,
+                    neglect_threshold: 20,
+                },
+                coherence: CoherenceConfig {
+                    principled_threshold: 5,
+                    flipflopper_threshold: -3,
+                },
+                stress: StressConfig {
+                    crisis_stress: 10,
+                    scandal_stress: 15,
+                    overwork_threshold: 80,
+                    burnout_threshold: 95,
+                },
+                elections: ElectionsConfig {
+                    campaign_weeks_primary: 12,
+                    campaign_weeks_general: 12,
+                    incumbent_advantage: 5,
+                },
+            },
+            difficulty: DifficultyMode {
+                description: "Balanced challenge.".into(),
+                dc_modifier: 0,
+                ap_bonus: 0,
+                npc_grudge_decay: 1.0,
+                scandal_frequency: 1.0,
+                economy_volatility: 1.0,
+                allow_reload: false,
+            },
+        }
+    }
+
     /// Load configuration from the game/config/ directory
     pub fn load(config_dir: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = Path::new(config_dir);

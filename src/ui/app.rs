@@ -129,7 +129,9 @@ impl App {
                     "[AP: 0 — /end to advance]".into()
                 }
             }
+            "Conversation" => "[Free talk — /leave to end]".into(),
             "Dawn" => "[Briefing...]".into(),
+            "Dusk" => "[Resolving...]".into(),
             _ => format!("[{}]", self.phase),
         };
 
