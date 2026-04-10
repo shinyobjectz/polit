@@ -4,6 +4,7 @@ use ratatui::widgets::{Block, Paragraph};
 use serde::Deserialize;
 use std::time::{Duration, Instant};
 
+use super::music::MusicController;
 use super::theme;
 
 /// A single intro slide
@@ -57,10 +58,14 @@ impl IntroScreen {
     pub fn run(
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
+        music: &MusicController,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         if self.slides.is_empty() {
             return Ok(true);
         }
+
+        // Switch to intro score (starts on slide 0)
+        music.switch_to_intro();
 
         loop {
             // Animate typewriter
@@ -73,6 +78,11 @@ impl IntroScreen {
                     if self.chars_revealed < total_chars {
                         self.chars_revealed += 1;
                         self.last_char_time = now;
+
+                        // Subtle typewriter tick every 3rd character
+                        if self.chars_revealed % 3 == 0 {
+                            music.play_typewriter_tick();
+                        }
                     } else {
                         self.animation_done = true;
                     }
@@ -94,6 +104,9 @@ impl IntroScreen {
                     }
 
                     match key.code {
+                        KeyCode::Char('m') => {
+                            music.toggle_mute();
+                        }
                         // → or Enter to advance (only after animation done)
                         KeyCode::Right | KeyCode::Enter => {
                             if !self.animation_done {
@@ -109,6 +122,9 @@ impl IntroScreen {
                                 self.chars_revealed = 0;
                                 self.animation_done = false;
                                 self.last_char_time = Instant::now();
+
+                                // Advance intro score to match slide
+                                music.advance_slide(self.current_slide);
                             }
                         }
                         KeyCode::Esc => return Ok(false),

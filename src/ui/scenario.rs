@@ -2,6 +2,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use super::music::MusicController;
 use super::theme;
 
 /// Scenario configuration result
@@ -106,9 +107,10 @@ impl ScenarioScreen {
     pub fn run(
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
+        music: &MusicController,
     ) -> Result<Option<ScenarioConfig>, Box<dyn std::error::Error>> {
         loop {
-            terminal.draw(|frame| self.render(frame))?;
+            terminal.draw(|frame| self.render(frame, music))?;
 
             if event::poll(std::time::Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
@@ -118,6 +120,9 @@ impl ScenarioScreen {
                     match key.code {
                         KeyCode::Esc => return Ok(None),
                         KeyCode::Char('q') => return Ok(None),
+                        KeyCode::Char('m') => {
+                            music.toggle_mute();
+                        }
                         KeyCode::Char('c')
                             if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
                         {
@@ -127,11 +132,13 @@ impl ScenarioScreen {
                             Phase::PickEra => {
                                 if self.era_selected > 0 {
                                     self.era_selected -= 1;
+                                    music.play_nav();
                                 }
                             }
                             Phase::PickDifficulty => {
                                 if self.diff_selected > 0 {
                                     self.diff_selected -= 1;
+                                    music.play_nav();
                                 }
                             }
                         },
@@ -139,20 +146,24 @@ impl ScenarioScreen {
                             Phase::PickEra => {
                                 if self.era_selected < ERAS.len() - 1 {
                                     self.era_selected += 1;
+                                    music.play_nav();
                                 }
                             }
                             Phase::PickDifficulty => {
                                 if self.diff_selected < DIFFICULTIES.len() - 1 {
                                     self.diff_selected += 1;
+                                    music.play_nav();
                                 }
                             }
                         },
                         KeyCode::Enter => match self.phase {
                             Phase::PickEra => {
+                                music.play_select();
                                 self.chosen_era = Some(ERAS[self.era_selected]);
                                 self.phase = Phase::PickDifficulty;
                             }
                             Phase::PickDifficulty => {
+                                music.play_select();
                                 return Ok(Some(ScenarioConfig {
                                     era: self.chosen_era.unwrap(),
                                     difficulty: DIFFICULTIES[self.diff_selected],
@@ -166,7 +177,7 @@ impl ScenarioScreen {
         }
     }
 
-    fn render(&self, frame: &mut Frame) {
+    fn render(&self, frame: &mut Frame, music: &MusicController) {
         let area = frame.area();
         frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
@@ -223,10 +234,19 @@ impl ScenarioScreen {
         }
 
         // Footer
+        let mute_label = if music.is_muted() {
+            "M \u{266b}off"
+        } else {
+            "M \u{266b}on"
+        };
         let footer = Paragraph::new(Line::from(vec![
-            Span::styled("↑↓ Navigate  ", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(
+                "\u{2191}\u{2193} Navigate  ",
+                Style::default().fg(theme::FG_MUTED),
+            ),
             Span::styled("Enter Select  ", Style::default().fg(theme::FG_MUTED)),
-            Span::styled("Esc Back", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(mute_label, Style::default().fg(theme::FG_MUTED)),
+            Span::styled("  Esc Back", Style::default().fg(theme::FG_MUTED)),
         ]))
         .alignment(Alignment::Center);
         frame.render_widget(footer, layout[6]);

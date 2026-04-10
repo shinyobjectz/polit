@@ -123,41 +123,50 @@ impl App {
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1), // Status bar
-                    Constraint::Min(3),    // Chat
-                    Constraint::Length(2), // Input
+                    Constraint::Length(2), // Status bar (full width)
+                    Constraint::Min(3),    // Chat (centered)
+                    Constraint::Length(4), // Input area (floating bar)
                 ])
                 .split(area);
 
-            // Status bar
-            let status_area = theme::centered_content(layout[0]);
-            frame.render_widget(status, status_area);
+            // Status bar — FULL WIDTH with subtle bottom border
+            frame.render_widget(
+                status.clone().style(Style::default().bg(theme::BG_SUBTLE)),
+                layout[0],
+            );
 
-            // Chat (centered)
+            // Chat — centered column
             let chat_area = theme::centered_content(layout[1]);
             frame.render_widget(chat_widget, chat_area);
 
-            // Input line
-            let input_area = theme::centered_content(layout[2]);
+            // Input — floating card bar, centered
+            let input_content_area = theme::centered_content(layout[2]);
+            // Floating input with lighter blue bg and border
+            let input_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::ACCENT_BLUE))
+                .style(Style::default().bg(theme::BG_HIGHLIGHT));
+            let inner_area = input_block.inner(input_content_area);
+            frame.render_widget(input_block, input_content_area);
+
             let input_widget = Paragraph::new(Line::from(vec![
-                Span::styled("> ", Style::default().fg(theme::PLAYER_INPUT)),
+                Span::styled("▶ ", Style::default().fg(theme::ACCENT)),
                 Span::styled(&input_str, Style::default().fg(theme::FG)),
                 Span::styled(
                     "▊",
                     Style::default()
-                        .fg(theme::FG)
+                        .fg(theme::FG_DIM)
                         .add_modifier(Modifier::SLOW_BLINK),
                 ),
-            ]))
-            .style(Style::default().bg(theme::BG));
-            frame.render_widget(input_widget, input_area);
+            ]));
+            frame.render_widget(input_widget, inner_area);
 
             // Slash autocomplete menu
             if showing_slash && !filtered_cmds.is_empty() {
                 let menu_height = (filtered_cmds.len() as u16 + 2).min(12);
                 let menu_width = 35;
-                let menu_x = input_area.x;
-                let menu_y = input_area.y.saturating_sub(menu_height);
+                let menu_x = input_content_area.x + 1;
+                let menu_y = input_content_area.y.saturating_sub(menu_height);
                 let menu_area = Rect::new(menu_x, menu_y, menu_width, menu_height);
 
                 let items: Vec<Line> = filtered_cmds
@@ -208,13 +217,16 @@ impl App {
         let empty = "░".repeat((self.ap_max - self.ap_current).max(0) as usize);
 
         Paragraph::new(Line::from(vec![
+            Span::styled("  🇺🇸 ", Style::default()),
+            Span::styled("POLIT", Style::default().fg(theme::FG).bold()),
+            Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
             Span::styled(
-                format!("Week {}, {} ", self.week, self.year),
+                format!("Week {}, {}", self.week, self.year),
                 Style::default().fg(theme::FG_DIM),
             ),
-            Span::styled("│ ", Style::default().fg(theme::FG_MUTED)),
-            Span::styled(format!("{} ", self.phase), Style::default().fg(theme::FG)),
-            Span::styled("│ ", Style::default().fg(theme::FG_MUTED)),
+            Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(self.phase.clone(), Style::default().fg(theme::FG)),
+            Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
             Span::styled(
                 format!("AP {}{} ", filled, empty),
                 Style::default().fg(theme::FG_DIM),
@@ -224,7 +236,7 @@ impl App {
                 Style::default().fg(theme::FG),
             ),
         ]))
-        .style(Style::default().bg(theme::BG))
+        .style(Style::default().bg(theme::BG_SUBTLE))
     }
 
     fn filtered_commands(&self) -> Vec<(String, String)> {

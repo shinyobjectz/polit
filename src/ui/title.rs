@@ -20,7 +20,6 @@ pub struct TitleScreen {
     items: Vec<(&'static str, TitleAction)>,
     has_save: bool,
     frame_count: u64,
-    music: MusicController,
 }
 
 impl TitleScreen {
@@ -33,25 +32,23 @@ impl TitleScreen {
         items.push(("  Settings", TitleAction::Settings));
         items.push(("  Quit", TitleAction::Quit));
 
-        let music = MusicController::start_anthem();
-
         Self {
             selected: 0,
             action: None,
             items,
             has_save,
             frame_count: 0,
-            music,
         }
     }
 
     pub fn run(
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
+        music: &MusicController,
     ) -> Result<TitleAction, Box<dyn std::error::Error>> {
         loop {
             self.frame_count += 1;
-            terminal.draw(|frame| self.render(frame))?;
+            terminal.draw(|frame| self.render(frame, music))?;
 
             if event::poll(std::time::Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
@@ -62,28 +59,28 @@ impl TitleScreen {
                         KeyCode::Up | KeyCode::Char('k') => {
                             if self.selected > 0 {
                                 self.selected -= 1;
+                                music.play_nav();
                             }
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
                             if self.selected < self.items.len() - 1 {
                                 self.selected += 1;
+                                music.play_nav();
                             }
                         }
                         KeyCode::Enter => {
-                            self.music.stop();
+                            music.play_select();
                             return Ok(self.items[self.selected].1);
                         }
                         KeyCode::Char('m') => {
-                            self.music.toggle_mute();
+                            music.toggle_mute();
                         }
                         KeyCode::Char('q') | KeyCode::Esc => {
-                            self.music.stop();
                             return Ok(TitleAction::Quit);
                         }
                         KeyCode::Char('c')
                             if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
                         {
-                            self.music.stop();
                             return Ok(TitleAction::Quit);
                         }
                         _ => {}
@@ -93,7 +90,7 @@ impl TitleScreen {
         }
     }
 
-    fn render(&self, frame: &mut Frame) {
+    fn render(&self, frame: &mut Frame, music: &MusicController) {
         let area = frame.area();
 
         frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
@@ -113,7 +110,7 @@ impl TitleScreen {
 
         // Title: flag emoji + POLIT
         let title = Paragraph::new(Line::from(vec![
-            Span::styled("🇺🇸 ", Style::default()),
+            Span::styled("\u{1f1fa}\u{1f1f8} ", Style::default()),
             Span::styled("P O L I T", Style::default().fg(theme::FG).bold()),
         ]))
         .alignment(Alignment::Center);
@@ -131,13 +128,16 @@ impl TitleScreen {
         self.render_menu(frame, layout[4]);
 
         // Footer
-        let mute_label = if self.music.is_muted() {
-            "M Music ♪off"
+        let mute_label = if music.is_muted() {
+            "M Music \u{266b}off"
         } else {
-            "M Music ♪on"
+            "M Music \u{266b}on"
         };
         let footer = Paragraph::new(Line::from(vec![
-            Span::styled("↑↓ Navigate  ", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(
+                "\u{2191}\u{2193} Navigate  ",
+                Style::default().fg(theme::FG_MUTED),
+            ),
             Span::styled("Enter Select  ", Style::default().fg(theme::FG_MUTED)),
             Span::styled(mute_label, Style::default().fg(theme::FG_MUTED)),
             Span::styled("  Q Quit", Style::default().fg(theme::FG_MUTED)),
@@ -156,7 +156,7 @@ impl TitleScreen {
         for (i, (label, _)) in self.items.iter().enumerate() {
             if i == self.selected {
                 lines.push(Line::from(vec![
-                    Span::styled(" ▶ ", Style::default().fg(theme::ACCENT).bold()),
+                    Span::styled(" \u{25b6} ", Style::default().fg(theme::ACCENT).bold()),
                     Span::styled(*label, Style::default().fg(theme::FG).bold()),
                 ]));
             } else {
