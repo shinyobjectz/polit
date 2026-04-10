@@ -35,6 +35,7 @@ crossbeam-channel = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+rmp-serde = "1"
 
 # Async
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
@@ -56,6 +57,9 @@ hf-hub = "0.4"
 anyhow = "1"
 libc = "0.2"
 
+# Python interop
+pyo3 = { version = "0.23", features = ["auto-initialize"], optional = true }
+
 # HTTP
 reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
 
@@ -67,6 +71,7 @@ criterion = "0.5"
 
 [features]
 default = []
+simulation = ["pyo3"]
 data-pipeline = ["reqwest"]
 cuda = []
 metal = ["llama-cpp-2/metal"]

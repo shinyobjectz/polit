@@ -1,4 +1,4 @@
-.PHONY: build test install run demo headless clean lint fmt check
+.PHONY: build test install run demo headless clean lint fmt check venv venv-update
 
 # === Development ===
 
@@ -82,4 +82,34 @@ info:
 	@echo "Config:  ~/.polit/config/"
 	@echo "Saves:   ~/.polit/saves/"
 	@echo "Log:     ~/.polit/polit.log"
+	@echo "Agent:   ~/.polit/agent_debug.jsonl"
 	@echo "Source:  $$(pwd)"
+
+# === Python Simulation ===
+
+venv:
+	python3 -m venv sim/.venv
+	sim/.venv/bin/pip install -e sim/
+
+venv-update:
+	sim/.venv/bin/pip install -e sim/
+
+# === Debug ===
+
+# Show last N agent turns from debug log (default 5)
+debug:
+	@echo "=== Agent Debug Log ==="
+	@tail -5 ~/.polit/agent_debug.jsonl 2>/dev/null | python3 -m json.tool --no-ensure-ascii 2>/dev/null || tail -5 ~/.polit/agent_debug.jsonl 2>/dev/null || echo "No agent log yet. Run polit first."
+
+# Show full agent debug log
+debug-full:
+	@cat ~/.polit/agent_debug.jsonl 2>/dev/null | python3 -m json.tool --no-ensure-ascii 2>/dev/null || cat ~/.polit/agent_debug.jsonl 2>/dev/null || echo "No agent log yet."
+
+# Show last N lines of game log
+log:
+	@tail -50 ~/.polit/polit.log 2>/dev/null || echo "No log yet."
+
+# Clear debug logs for fresh run
+debug-clear:
+	@rm -f ~/.polit/agent_debug.jsonl ~/.polit/polit.log
+	@echo "Debug logs cleared."

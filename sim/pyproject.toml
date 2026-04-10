@@ -1,0 +1,14 @@
+[project]
+name = "polit-sim"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "mesa>=3.0",
+    "policyengine-us",
+    "numpy",
+    "pandas",
+    "msgpack",
+]
+
+[project.optional-dependencies]
+macro = ["pyfrbus"]

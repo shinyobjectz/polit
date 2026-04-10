@@ -1,1 +1,5 @@
 /target
+sim/.venv/
+__pycache__/
+*.pyc
+sim/*.egg-info/
