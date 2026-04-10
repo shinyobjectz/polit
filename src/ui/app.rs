@@ -251,17 +251,7 @@ impl App {
                 ),
                 Style::default().fg(Color::White),
             ),
-            if self.chat.user_scrolled {
-                Span::styled(
-                    format!("[↑{} scrolled — End to return] ", self.chat.scroll_up),
-                    Style::default().fg(Color::Yellow),
-                )
-            } else {
-                Span::styled(
-                    "[Tab] Menu  [Scroll] History",
-                    Style::default().fg(Color::DarkGray),
-                )
-            },
+            Span::styled("[Tab] Menu", Style::default().fg(Color::DarkGray)),
         ]))
         .style(Style::default().bg(Color::Rgb(30, 30, 40)))
     }
@@ -313,23 +303,9 @@ impl App {
                             self.process_input(&input);
                         }
                     }
-                    KeyCode::PageUp => {
-                        self.chat.scroll_up_by(10);
-                    }
-                    KeyCode::PageDown => {
-                        self.chat.scroll_down_by(10);
-                    }
-                    KeyCode::Home => {
-                        self.chat.scroll_up_by(1000); // Jump to top
-                    }
-                    KeyCode::End => {
+                    // Shift+R = return to current (bottom of chat)
+                    KeyCode::Char('R') => {
                         self.chat.scroll_to_bottom();
-                    }
-                    KeyCode::Up if self.input.is_empty() => {
-                        self.chat.scroll_up_by(3);
-                    }
-                    KeyCode::Down if self.input.is_empty() => {
-                        self.chat.scroll_down_by(3);
                     }
                     KeyCode::Backspace => {
                         self.input.pop();

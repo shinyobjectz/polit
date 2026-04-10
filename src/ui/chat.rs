@@ -94,8 +94,8 @@ impl ChatStream {
 
     /// Scroll up by N lines
     pub fn scroll_up_by(&mut self, lines: u16) {
-        let max_scroll = self.total_lines.saturating_sub(5);
-        self.scroll_up = (self.scroll_up + lines).min(max_scroll);
+        // No cap — scroll as far back as content exists
+        self.scroll_up = (self.scroll_up + lines).min(self.total_lines);
         self.user_scrolled = true;
     }
 
