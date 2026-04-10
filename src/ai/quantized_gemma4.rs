@@ -121,20 +121,14 @@ struct LayerWeights {
     // Feed-forward network
     mlp: Mlp,
 
-    // Gemma 4 PLE: per-layer embedding and gating
-    per_layer_token_embd: Option<QMatMul>, // per-layer token embedding projection
-    per_layer_model_proj: Option<QMatMul>, // per-layer output projection
-    per_layer_proj_norm: Option<RmsNorm>,  // norm after per-layer projection
-    inp_gate: Option<QMatMul>,             // input gating
-    layer_output_scale: Option<Tensor>,    // scalar output scale
-    post_norm: Option<RmsNorm>,            // additional post-norm
-
+    // Gemma 4 PLE: per-layer gating and scaling (only these exist per block)
+    inp_gate: Option<QMatMul>,
+    layer_output_scale: Option<Tensor>,
     // Attention parameters
-    n_head: usize,           // Number of query heads
-    n_kv_head: usize,        // Number of key-value heads
-    head_dim: usize,         // Dimension of each head
-    q_dim: usize,            // Total dimension for queries
-    embedding_length: usize, // for PLE residual connections
+    n_head: usize,    // Number of query heads
+    n_kv_head: usize, // Number of key-value heads
+    head_dim: usize,  // Dimension of each head
+    q_dim: usize,     // Total dimension for queries
 
     sliding_window_size: Option<usize>,
 
@@ -262,6 +256,12 @@ pub struct ModelWeights {
     layers: Vec<LayerWeights>,
     norm: RmsNorm,
     output: QMatMul,
+    // Gemma 4 PLE: model-level shared tensors
+    per_layer_token_embd: Option<Embedding>, // [8960, vocab] — shared PLE embedding
+    per_layer_model_proj: Option<Tensor>,    // [hidden, 8960] dequantized for per-layer slicing
+    per_layer_proj_norm: Option<RmsNorm>,    // [256] — norm per-layer slice
+    per_layer_dim: usize,                    // 256 (= 8960 / num_layers)
+    num_layers: usize,
     span: tracing::Span,
     span_output: tracing::Span,
 }
@@ -336,8 +336,29 @@ impl ModelWeights {
         )?;
         let output = match ct.tensor(reader, "output.weight", device) {
             Ok(tensor) => tensor,
-            Err(_) => ct.tensor(reader, "token_embd.weight", device)?, // Use tied weights if output.weight doesn't exist
+            Err(_) => ct.tensor(reader, "token_embd.weight", device)?,
         };
+
+        // Gemma 4 PLE: model-level shared tensors
+        let per_layer_dim = 256; // Each layer gets 256 dims from the packed embedding
+        let per_layer_token_embd = ct
+            .tensor(reader, "per_layer_token_embd.weight", device)
+            .ok()
+            .map(|t| {
+                let t = t.dequantize(device).unwrap();
+                let total_dim = block_count * per_layer_dim; // 35 * 256 = 8960
+                Embedding::new(t, total_dim)
+            });
+        let per_layer_model_proj = ct
+            .tensor(reader, "per_layer_model_proj.weight", device)
+            .ok()
+            .map(|t| t.dequantize(device))
+            .transpose()?;
+        let per_layer_proj_norm = ct
+            .tensor(reader, "per_layer_proj_norm.weight", device)
+            .ok()
+            .map(|t| RmsNorm::from_qtensor(t, rms_norm_eps))
+            .transpose()?;
 
         let mut layers = Vec::with_capacity(block_count);
         for layer_idx in 0..block_count {
@@ -410,34 +431,7 @@ impl ModelWeights {
             let rotary_embedding =
                 RotaryEmbedding::new(layer_head_dim, layer_rope_frequency, device)?;
 
-            // Gemma 4 PLE: load per-layer tensors (optional — may not exist)
-            let per_layer_token_embd = ct
-                .tensor(
-                    reader,
-                    &format!("{prefix}.per_layer_token_embd.weight"),
-                    device,
-                )
-                .ok()
-                .map(|t| QMatMul::from_qtensor(t))
-                .transpose()?;
-            let per_layer_model_proj = ct
-                .tensor(
-                    reader,
-                    &format!("{prefix}.per_layer_model_proj.weight"),
-                    device,
-                )
-                .ok()
-                .map(|t| QMatMul::from_qtensor(t))
-                .transpose()?;
-            let per_layer_proj_norm = ct
-                .tensor(
-                    reader,
-                    &format!("{prefix}.per_layer_proj_norm.weight"),
-                    device,
-                )
-                .ok()
-                .map(|t| RmsNorm::from_qtensor(t, rms_norm_eps))
-                .transpose()?;
+            // Gemma 4 PLE: per-block tensors (inp_gate + layer_output_scale)
             let inp_gate = ct
                 .tensor(reader, &format!("{prefix}.inp_gate.weight"), device)
                 .ok()
@@ -451,11 +445,6 @@ impl ModelWeights {
                 )
                 .ok()
                 .map(|t| t.dequantize(device))
-                .transpose()?;
-            let post_norm = ct
-                .tensor(reader, &format!("{prefix}.post_norm.weight"), device)
-                .ok()
-                .map(|t| RmsNorm::from_qtensor(t, rms_norm_eps))
                 .transpose()?;
 
             let span_attn = tracing::span!(tracing::Level::TRACE, "attn");
@@ -473,17 +462,12 @@ impl ModelWeights {
                 ffn_norm,
                 post_ffn_norm,
                 mlp,
-                per_layer_token_embd,
-                per_layer_model_proj,
-                per_layer_proj_norm,
                 inp_gate,
                 layer_output_scale,
-                post_norm,
                 n_head: head_count,
                 n_kv_head: head_count_kv,
                 head_dim: layer_head_dim,
                 q_dim: layer_q_dim,
-                embedding_length,
                 sliding_window_size,
                 rotary_embedding,
                 neg_inf: neg_inf.clone(),
@@ -502,6 +486,11 @@ impl ModelWeights {
             layers,
             norm,
             output: QMatMul::from_qtensor(output)?,
+            per_layer_token_embd,
+            per_layer_model_proj,
+            per_layer_proj_norm,
+            per_layer_dim,
+            num_layers: block_count,
             span,
             span_output,
         })
@@ -514,10 +503,15 @@ impl ModelWeights {
         let mut layer_in = self.tok_embeddings.forward(x)?;
         layer_in = (layer_in * (self.embedding_length as f64).sqrt())?;
 
-        // Per-layer token embeddings: compute once, reuse per layer
-        // (each layer has its own per_layer_token_embd projection)
+        // PLE: compute per-layer embeddings once from input tokens
+        // Shape: [batch, seq, 8960] — each layer slices [256] from this
+        let per_layer_embeds = self
+            .per_layer_token_embd
+            .as_ref()
+            .map(|embd| embd.forward(x))
+            .transpose()?;
 
-        for layer in self.layers.iter_mut() {
+        for (layer_idx, layer) in self.layers.iter_mut().enumerate() {
             let attention_mask = if seq_len == 1 {
                 None
             } else {
@@ -547,31 +541,40 @@ impl ModelWeights {
             drop(_enter);
 
             // 3. PLE: per-layer input block (AFTER attention + FFN)
-            // per_layer_input_gate(hidden) → act → multiply by per_layer_input → project → norm → residual
-            if let (Some(ref gate), Some(ref per_layer_embd), Some(ref proj)) = (
-                &layer.inp_gate,
-                &layer.per_layer_token_embd,
-                &layer.per_layer_model_proj,
-            ) {
+            if let (Some(ref gate), Some(ref embeds)) = (&layer.inp_gate, &per_layer_embeds) {
                 let residual = &hidden;
-                // Gate: project hidden to smaller dim
+                // Gate: project hidden → per_layer_dim (256)
                 let gated = gate.forward(&hidden)?;
-                // Activation (SiLU / GELU — Gemma uses GELU for gating)
                 let gated = candle_nn::ops::silu(&gated)?;
-                // Per-layer token embedding (same dim as gate output)
-                let per_layer_input = per_layer_embd.forward(&layer_in)?;
+                // Slice this layer's 256-dim chunk from the packed embedding [batch, seq, 8960]
+                let start = layer_idx * self.per_layer_dim;
+                let per_layer_input = embeds.narrow(D::Minus1, start, self.per_layer_dim)?;
                 // Element-wise multiply
                 let x = (gated * per_layer_input)?;
-                // Project back to full hidden size
-                let x = proj.forward(&x)?;
-                // Post-norm
-                let x = if let Some(ref norm) = layer.per_layer_proj_norm {
+                // Norm on the 256-dim output
+                let x = if let Some(ref norm) = self.per_layer_proj_norm {
                     norm.forward(&x)?
                 } else {
                     x
                 };
-                // Residual
-                hidden = (residual + x)?;
+                // Project 256 → hidden using this layer's slice of the shared projection
+                // per_layer_model_proj is [hidden_size, total_ple_dim] = [1536, 8960]
+                // Slice columns [start..start+256] → [1536, 256]
+                // Then matmul: [batch, seq, 256] @ [1536, 256]^T = [batch, seq, 1536]
+                if let Some(ref proj_weight) = self.per_layer_model_proj {
+                    // proj_weight is [total_ple_dim, hidden_size] = [8960, 1536] (GGUF transposed)
+                    // Slice rows [start..start+256] → [256, 1536]
+                    let proj_slice = proj_weight.narrow(0, start, self.per_layer_dim)?;
+                    // x: [b, s, 256] @ [256, 1536] = [b, s, 1536]
+                    // Broadcast for batched matmul: [256, 1536] → [1, 256, 1536]
+                    let proj_slice = proj_slice.unsqueeze(0)?.broadcast_as((
+                        b_sz,
+                        self.per_layer_dim,
+                        self.embedding_length,
+                    ))?;
+                    let projected = x.matmul(&proj_slice)?;
+                    hidden = (residual + projected)?;
+                }
             }
 
             // 4. Layer scalar (uniform multiplier)
