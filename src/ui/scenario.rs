@@ -174,12 +174,11 @@ impl ScenarioScreen {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(30), // top margin (same as title)
+                Constraint::Percentage(25), // top margin
                 Constraint::Length(2),      // POLIT title
                 Constraint::Length(2),      // subtitle
-                Constraint::Length(3),      // spacer
-                Constraint::Length(8),      // menu card (fixed)
-                Constraint::Min(1),         // fill
+                Constraint::Length(2),      // spacer
+                Constraint::Min(10),        // menu card (flexible)
                 Constraint::Length(2),      // footer
             ])
             .split(area);
@@ -220,7 +219,7 @@ impl ScenarioScreen {
             Span::styled("Esc Back", Style::default().fg(theme::FG_MUTED)),
         ]))
         .alignment(Alignment::Center);
-        frame.render_widget(footer, layout[6]);
+        frame.render_widget(footer, layout[5]);
     }
 
     fn render_era_menu(&self, frame: &mut Frame, area: Rect) {
