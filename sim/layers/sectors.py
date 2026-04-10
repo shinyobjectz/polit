@@ -59,13 +59,22 @@ class SectorLayer(SimulationLayer):
     def step(self, world_state: dict, events: list[dict], delta: dict) -> dict:
         macro = world_state.get("macro", {})
 
+        # Current tick's effective macro values (world_state + macro layer delta)
+        current_gdp = (
+            macro.get("gdp_growth", 0.02)
+            + delta.get("gdp_growth_delta", 0.0)
+        )
+        # Fed funds rate from macro layer's Taylor rule (delta), fall back to
+        # world_state, then default.
+        current_fed_rate = (
+            delta.get("fed_funds_rate")
+            or macro.get("fed_funds_rate", 0.05)
+        )
+
         # Pass macro conditions to agents
         for agent in self._model.agents:
-            agent.macro_gdp_growth = (
-                macro.get("gdp_growth", 0.02)
-                + delta.get("gdp_growth_delta", 0)
-            )
-            agent.macro_fed_rate = macro.get("fed_funds_rate", 0.05)
+            agent.macro_gdp_growth = current_gdp
+            agent.macro_fed_rate = current_fed_rate
 
         # Apply sector-specific shocks from events
         for event in events:
@@ -86,13 +95,41 @@ class SectorLayer(SimulationLayer):
         # Step the model
         self._model.step()
 
-        # Collect sector deltas
+        # Macro-anchor: when the sector-implied unemployment diverges from
+        # the macro unemployment, nudge sector employment to reduce the gap.
+        # This prevents the two layers from drifting apart over time.
+        # Only anchors when macro unemployment is explicitly provided.
+        if "unemployment" in macro:
+            macro_unemployment = (
+                macro["unemployment"]
+                + delta.get("unemployment_delta", 0.0)
+            )
+            agents = list(self._model.agents)
+            n_agents = len(agents)
+            if n_agents > 0:
+                sector_emp_avg = sum(a.employment for a in agents) / n_agents
+                # Map macro unemployment to an employment index:
+                # at natural rate (4.5%), employment index = 1.0
+                macro_implied_emp = 1.0 - (macro_unemployment - 0.045)
+                gap = macro_implied_emp - sector_emp_avg
+                # Only anchor when divergence is significant (> 5pp)
+                if abs(gap) > 0.05:
+                    emp_nudge = gap * 0.05  # gentle 5%/tick
+                    for agent in agents:
+                        agent.employment += emp_nudge
+
+        # Collect sector deltas, merging with any pre-existing exogenous
+        # shock deltas (e.g. from _apply_exogenous_shocks in host.py)
         delta.setdefault("sector_deltas", {})
         for agent in self._model.agents:
+            existing = delta["sector_deltas"].get(agent.sector_name, {})
             delta["sector_deltas"][agent.sector_name] = {
-                "output_delta": agent.output - 1.0,
-                "employment_delta": agent.employment - 1.0,
-                "price_delta": agent.price_level - 1.0,
+                "output_delta": (agent.output - 1.0)
+                    + existing.get("output_delta", 0.0),
+                "employment_delta": (agent.employment - 1.0)
+                    + existing.get("employment_delta", 0.0),
+                "price_delta": (agent.price_level - 1.0)
+                    + existing.get("price_delta", 0.0),
             }
 
         # Generate narrative seeds for significant changes

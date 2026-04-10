@@ -56,25 +56,80 @@ class HouseholdLayer(SimulationLayer):
         ]
 
         macro = world_state.get("macro", {})
+        # Effective macro values incorporating current-tick macro layer deltas
+        unemployment = (
+            macro.get("unemployment", 0.04)
+            + delta.get("unemployment_delta", 0.0)
+        )
+        gdp_growth = (
+            macro.get("gdp_growth", 0.02)
+            + delta.get("gdp_growth_delta", 0.0)
+        )
+        gdp = macro.get("gdp", _DEFAULT_GDP)
+        counties = world_state.get("counties", {})
+
+        # Read sector deltas produced by the sector layer this tick
+        sector_deltas = delta.get("sector_deltas", {})
+
+        # Invalidate cache when macro conditions shift or sectors move
+        has_sector_movement = any(
+            abs(sd.get("employment_delta", 0)) > 0.001
+            for sd in sector_deltas.values()
+        )
         cache_key = _build_cache_key(fiscal_events, macro)
 
-        if cache_key == self._cache_key and self._cached_results is not None:
+        if (
+            cache_key == self._cache_key
+            and self._cached_results is not None
+            and not has_sector_movement
+        ):
             _merge_cached(delta, self._cached_results)
             return delta
-
-        # No fiscal events and no significant macro shift → zero deltas.
-        if not fiscal_events:
-            self._cache_key = cache_key
-            self._cached_results = {"county_deltas": {}, "narrative_seeds": []}
-            return delta
-
-        gdp = macro.get("gdp", _DEFAULT_GDP)
-        unemployment = macro.get("unemployment", 0.04)
-        counties = world_state.get("counties", {})
 
         county_deltas: dict[str, dict] = {}
         narrative_seeds: list[str] = []
 
+        # ── 1. Apply sector employment changes to county incomes ─────
+        for county_id, county_data in counties.items():
+            industries = county_data.get("major_industries", {})
+            if not industries and not sector_deltas:
+                continue
+
+            # Weight sector employment changes by county industry mix
+            county_employment_impact = sum(
+                sector_deltas.get(sector, {}).get("employment_delta", 0.0)
+                * share
+                for sector, share in industries.items()
+            )
+
+            if abs(county_employment_impact) > 1e-6:
+                existing = county_deltas.get(county_id, {
+                    "income_delta_by_quintile": [0.0] * 5,
+                    "snap_eligible_change": 0.0,
+                    "medicaid_eligible_change": 0.0,
+                })
+                # Employment changes hit lower quintiles harder
+                emp_weights = [0.30, 0.25, 0.20, 0.15, 0.10]
+                county_pop = _county_population(counties, county_id)
+                # Convert employment fraction to approximate income impact
+                income_effect = county_employment_impact * gdp / max(county_pop, 1) * 0.1
+                for q in range(5):
+                    existing["income_delta_by_quintile"][q] += (
+                        income_effect * emp_weights[q] * 5
+                    )
+
+                # Sector contraction pushes people into benefit eligibility
+                if county_employment_impact < 0:
+                    existing["snap_eligible_change"] += (
+                        abs(county_employment_impact) * 0.3
+                    )
+                    existing["medicaid_eligible_change"] += (
+                        abs(county_employment_impact) * 0.2
+                    )
+
+                county_deltas[county_id] = existing
+
+        # ── 2. Apply fiscal bill events ──────────────────────────────
         for event in fiscal_events:
             bill_type = event.get("bill_type", "spending")
             amount_gdp_pct = event.get("amount_gdp_pct", 0.0)
@@ -113,6 +168,27 @@ class HouseholdLayer(SimulationLayer):
                 _generate_narratives(bill_type, amount_gdp_pct, weights,
                                      gdp, affected_counties, sector)
             )
+
+        # ── 3. Narrative seeds for sector-driven county impacts ──────
+        if has_sector_movement:
+            contracting = [
+                name for name, sd in sector_deltas.items()
+                if sd.get("employment_delta", 0) < -0.01
+            ]
+            expanding = [
+                name for name, sd in sector_deltas.items()
+                if sd.get("employment_delta", 0) > 0.01
+            ]
+            if contracting:
+                narrative_seeds.append(
+                    f"Job losses in {', '.join(contracting)} "
+                    f"affecting household incomes"
+                )
+            if expanding:
+                narrative_seeds.append(
+                    f"Hiring in {', '.join(expanding)} "
+                    f"boosting household incomes"
+                )
 
         # Merge into delta
         for cid, cd in county_deltas.items():

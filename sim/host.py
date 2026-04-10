@@ -13,6 +13,16 @@ _layers: list = [
 ]
 
 
+def reset_layers() -> None:
+    """Reset all layers to fresh state. Used by tests."""
+    global _layers
+    _layers = [
+        MacroEconomyLayer(),
+        SectorLayer(),
+        HouseholdLayer(),
+    ]
+
+
 def _default_delta() -> dict:
     return {
         "gdp_growth_delta": 0.0,
@@ -90,6 +100,12 @@ def tick(world_state_bytes: bytes, events_bytes: bytes) -> bytes:
     delta = _default_delta()
     _apply_exogenous_shocks(events, delta)
 
+    # Layers run in dependency order: macro → sectors → household.
+    # Each layer reads the accumulated delta from previous layers so
+    # cross-layer effects cascade within a single tick:
+    #   macro produces gdp_growth_delta, fed_funds_rate, unemployment_delta
+    #   → sectors read those to adjust output/employment
+    #   → household reads sector_deltas + macro deltas for income effects
     for layer in _layers:
         delta = layer.step(world_state, events, delta)
 
