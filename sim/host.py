@@ -3,8 +3,10 @@
 import msgpack
 
 from sim.layers.household import HouseholdLayer
+from sim.layers.macro_economy import MacroEconomyLayer
 
 _layers: list = [
+    MacroEconomyLayer(),  # macro runs first — household reads its output
     HouseholdLayer(),
 ]
 
