@@ -3,3 +3,5 @@ policyengine-us
 numpy
 pandas
 msgpack
+census
+us
