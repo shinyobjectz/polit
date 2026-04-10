@@ -254,11 +254,7 @@ impl CharacterCreationScreen {
     }
 
     fn breathing_offset(&self) -> u16 {
-        if (self.frame_count % 60) < 30 {
-            0
-        } else {
-            1
-        }
+        0 // Disabled — too much movement for small avatar. Just blink.
     }
 
     fn draw_form(
@@ -321,7 +317,7 @@ impl CharacterCreationScreen {
                 layout[2],
             );
 
-            if page >= 1 || !first.is_empty() {
+            if page == 2 {
                 // Avatar breathes within its 2-line area by scrolling
                 let avatar_text = if breath == 0 {
                     vec![
