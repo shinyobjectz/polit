@@ -120,16 +120,21 @@ impl App {
             // Dark background
             frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
+            // Calculate input height based on content lines
+            let input_lines: Vec<&str> = input_str.split('\n').collect();
+            let input_height = (input_lines.len() as u16 + 2).max(3).min(10); // border + content, min 3, max 10
+
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(2), // Status bar (full width)
-                    Constraint::Min(3),    // Chat (centered)
-                    Constraint::Length(4), // Input area (floating bar)
+                    Constraint::Length(2),            // Status bar (full width)
+                    Constraint::Min(3),               // Chat (centered)
+                    Constraint::Length(input_height), // Input (dynamic height)
+                    Constraint::Length(1),            // Bottom margin
                 ])
                 .split(area);
 
-            // Status bar — FULL WIDTH with subtle bottom border
+            // Status bar — FULL WIDTH
             frame.render_widget(
                 status.clone().style(Style::default().bg(theme::BG_SUBTLE)),
                 layout[0],
@@ -139,9 +144,8 @@ impl App {
             let chat_area = theme::centered_content(layout[1]);
             frame.render_widget(chat_widget, chat_area);
 
-            // Input — floating card bar, centered
+            // Input — floating card bar, centered, grows with content
             let input_content_area = theme::centered_content(layout[2]);
-            // Floating input with lighter blue bg and border
             let input_block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme::ACCENT_BLUE))
@@ -149,16 +153,31 @@ impl App {
             let inner_area = input_block.inner(input_content_area);
             frame.render_widget(input_block, input_content_area);
 
-            let input_widget = Paragraph::new(Line::from(vec![
-                Span::styled("▶ ", Style::default().fg(theme::ACCENT)),
-                Span::styled(&input_str, Style::default().fg(theme::FG)),
-                Span::styled(
-                    "▊",
-                    Style::default()
-                        .fg(theme::FG_DIM)
-                        .add_modifier(Modifier::SLOW_BLINK),
-                ),
-            ]));
+            // Render multi-line input
+            let mut lines: Vec<Line> = Vec::new();
+            for (i, line) in input_lines.iter().enumerate() {
+                let mut spans = Vec::new();
+                if i == 0 {
+                    spans.push(Span::styled("▶ ", Style::default().fg(theme::ACCENT)));
+                } else {
+                    spans.push(Span::styled("  ", Style::default()));
+                }
+                spans.push(Span::styled(
+                    line.to_string(),
+                    Style::default().fg(theme::FG),
+                ));
+                // Cursor on the last line
+                if i == input_lines.len() - 1 {
+                    spans.push(Span::styled(
+                        "▊",
+                        Style::default()
+                            .fg(theme::FG_DIM)
+                            .add_modifier(Modifier::SLOW_BLINK),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            let input_widget = Paragraph::new(lines);
             frame.render_widget(input_widget, inner_area);
 
             // Slash autocomplete menu
@@ -324,6 +343,11 @@ impl App {
                     KeyCode::Char('R') => {
                         self.chat.scroll_to_bottom();
                     }
+                    // Shift+Enter = newline in input
+                    KeyCode::Enter if key.modifiers.contains(event::KeyModifiers::SHIFT) => {
+                        self.input.push('\n');
+                    }
+                    // Enter = submit
                     KeyCode::Enter => {
                         if !self.input.is_empty() {
                             let input = self.input.clone();
