@@ -150,35 +150,32 @@ pub struct CharacterCreationScreen {
     character: CharacterData,
     async_ai: Option<AsyncAiChat>,
     thinking: bool,
-    thinking_dots: u8, // animation: . .. ...
+    thinking_dots: u8,
+    thinking_start: std::time::Instant,
     creation_complete: bool,
     dm_question_count: u32,
 }
 
-const SYSTEM_PROMPT: &str = r#"You are the Narrator for POLIT, an American politics simulator. You are helping the player create their character through conversation.
+const SYSTEM_PROMPT: &str = r#"You are the Narrator for POLIT, an American politics simulator. You are having a natural conversation to help the player discover who their character is.
 
-PRIORITY ORDER for every response:
-1. LOCK IN any new information the player reveals (background, traits, motivation, etc.)
-2. If the player requests changes, acknowledge and update
-3. Then respond conversationally — ask the NEXT question to deepen the character
+You are NOT filling out a form. You are a creative collaborator helping someone find their character's story. Let the conversation flow naturally. Follow the player's energy — if they're excited about something, explore it. If they give you a thread, pull on it.
 
-Ask questions ONE AT A TIME. Be collaborative — build on what they give you, suggest details, help them craft a rich backstory. Don't just accept one-word answers — explore them.
+Be curious. Be specific. Offer vivid details and let them react. Paint scenes from their character's past. Ask "what if" questions. Suggest connections they haven't thought of.
 
-For example, if they say "lawyer" for background, ask what KIND of law, what case changed them, why they left.
+For example:
+- If they say "teacher" → "A teacher. Middle school? High school? I'm imagining someone who watched a school board meeting go sideways and thought... I could do better than this."
+- If they mention family → weave it into their political motivation
+- If they seem uncertain → offer two contrasting options and let them pick
 
-Keep responses to 2-4 sentences. Be warm, curious, and creative.
+Keep responses to 2-4 sentences. Every response should either reveal something new about the character or deepen something already established.
 
-Fields to fill through conversation (name is already set):
-- Background (what they did before politics — dig deep)
-- Archetype (suggest: Idealist, Machine Politician, Outsider, Dealmaker, Prosecutor, Activist, Veteran, Mogul)
-- Starting office (City Council, School Board, State Legislature, etc.)
-- Party affiliation
-- Character traits (one strength, one flaw)
-- Family situation
-- Core motivation (the real reason they entered politics)
-- A secret or vulnerability
+You're building toward a complete character but there's no checklist. The character emerges from the conversation. Key things that should come up naturally:
+- What they did before politics and why they left
+- What drives them (the real reason, not the campaign speech version)
+- Their greatest strength and the flaw that could undo them
+- Someone they care about, someone they're afraid of
 
-When the character feels complete, say "Your story is ready. Shall we begin?" and nothing else."#;
+When you feel the character is rich enough, say "Your story is ready. Shall we begin?""#;
 
 impl CharacterCreationScreen {
     pub fn new() -> Self {
@@ -200,6 +197,7 @@ impl CharacterCreationScreen {
             async_ai: None,
             thinking: false,
             thinking_dots: 0,
+            thinking_start: std::time::Instant::now(),
             creation_complete: false,
             dm_question_count: 0,
         }
@@ -240,6 +238,7 @@ impl CharacterCreationScreen {
                         );
                         async_ai.request_generation(&prompt, DmMode::Conversation);
                         self.thinking = true;
+                        self.thinking_start = std::time::Instant::now();
                         self.dm_question_count = 1;
                         self.phase = CreationPhase::AiChat;
                     }
@@ -798,29 +797,33 @@ impl CharacterCreationScreen {
         let input_lines: Vec<&str> = input_str.split('\n').collect();
         let input_height = (input_lines.len() as u16 + 2).max(3).min(10);
 
-        // Add/remove thinking indicator from chat
+        // Thinking indicator with elapsed time
         if thinking {
-            // Remove old thinking indicator if present
             if self
                 .chat
                 .messages
                 .last()
-                .map(|m| m.text.starts_with("✦ thinking"))
+                .map(|m| m.text.starts_with("✦"))
                 .unwrap_or(false)
             {
                 self.chat.messages.pop();
             }
-            self.chat.add_system(&format!("✦ thinking{}", dots));
+            let elapsed = self.thinking_start.elapsed().as_secs();
+            self.chat
+                .add_system(&format!("✦ thinking{} ({}s)", dots, elapsed));
         } else {
-            // Remove thinking indicator when done
+            // Replace with turn summary when done
             if self
                 .chat
                 .messages
                 .last()
-                .map(|m| m.text.starts_with("✦ thinking"))
+                .map(|m| m.text.starts_with("✦"))
                 .unwrap_or(false)
             {
+                let elapsed = self.thinking_start.elapsed().as_secs();
                 self.chat.messages.pop();
+                self.chat
+                    .add_system(&format!("✦ responded in {}s", elapsed));
             }
         }
 
@@ -908,14 +911,26 @@ impl CharacterCreationScreen {
             }
             frame.render_widget(Paragraph::new(lines), inner_area);
 
-            // Character summary block (bottom-right of chat area)
+            // Character sheet — floating to the right of the chat column
             if !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled) {
                 let filled_count = summary.iter().filter(|(_, _, f)| *f).count() as u16;
-                let block_height = filled_count + 2;
-                let block_width = 42;
-                let block_x = chat_area.right().saturating_sub(block_width + 1);
-                let block_y = layout[1].bottom().saturating_sub(block_height + 1);
-                let block_area = Rect::new(block_x, block_y, block_width, block_height);
+                let block_height = (filled_count + 3).min(layout[1].height);
+                let block_width = 36;
+                // Position to the right of the centered chat column
+                let block_x = chat_area.right() + 2;
+                let block_y = layout[1].y + 1;
+                // Only show if there's room to the right
+                let block_area = if block_x + block_width <= area.width {
+                    Rect::new(block_x, block_y, block_width, block_height)
+                } else {
+                    // Fallback: overlay top-right of chat
+                    Rect::new(
+                        chat_area.right().saturating_sub(block_width),
+                        block_y,
+                        block_width,
+                        block_height,
+                    )
+                };
 
                 let summary_lines: Vec<Line> = summary
                     .iter()
@@ -1055,6 +1070,7 @@ impl CharacterCreationScreen {
                             let prompt = ctx.build_prompt(&full_prompt, DmMode::Conversation);
                             async_ai.request_generation(&prompt, DmMode::Conversation);
                             self.thinking = true;
+                            self.thinking_start = std::time::Instant::now();
                         }
                     }
                     KeyCode::Backspace => {
