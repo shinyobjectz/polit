@@ -173,11 +173,11 @@ impl ScenarioScreen {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(20),
-                Constraint::Length(3),
+                Constraint::Percentage(15),
                 Constraint::Length(2),
                 Constraint::Length(2),
-                Constraint::Min(10),
+                Constraint::Length(1),
+                Constraint::Min(12),
                 Constraint::Length(2),
             ])
             .split(area);
@@ -222,17 +222,17 @@ impl ScenarioScreen {
     }
 
     fn render_era_menu(&self, frame: &mut Frame, area: Rect) {
-        let menu_area = centered_rect_fixed(40, ERAS.len() as u16 * 2 + 2, area);
-        let mut lines: Vec<Line> = Vec::new();
+        let menu_area = centered_rect_fixed(56, ERAS.len() as u16 * 3 + 3, area);
+        let mut lines: Vec<Line> = vec![Line::from("")];
 
         for (i, era) in ERAS.iter().enumerate() {
             if i == self.era_selected {
                 lines.push(Line::from(vec![
-                    Span::styled(" ▶ ", Style::default().fg(theme::ACCENT).bold()),
+                    Span::styled("    ▶  ", Style::default().fg(theme::ACCENT).bold()),
                     Span::styled(era.label(), Style::default().fg(theme::FG).bold()),
                 ]));
                 lines.push(Line::from(vec![
-                    Span::raw("     "),
+                    Span::raw("          "),
                     Span::styled(
                         era.description(),
                         Style::default().fg(theme::FG_DIM).italic(),
@@ -240,11 +240,12 @@ impl ScenarioScreen {
                 ]));
             } else {
                 lines.push(Line::from(vec![
-                    Span::raw("   "),
+                    Span::raw("       "),
                     Span::styled(era.label(), Style::default().fg(theme::FG_DIM)),
                 ]));
-                lines.push(Line::from("")); // spacer
+                lines.push(Line::from(""));
             }
+            lines.push(Line::from(""));
         }
 
         let menu = Paragraph::new(lines).block(
@@ -258,17 +259,17 @@ impl ScenarioScreen {
     }
 
     fn render_difficulty_menu(&self, frame: &mut Frame, area: Rect) {
-        let menu_area = centered_rect_fixed(45, DIFFICULTIES.len() as u16 * 2 + 2, area);
-        let mut lines: Vec<Line> = Vec::new();
+        let menu_area = centered_rect_fixed(56, DIFFICULTIES.len() as u16 * 3 + 3, area);
+        let mut lines: Vec<Line> = vec![Line::from("")];
 
         for (i, diff) in DIFFICULTIES.iter().enumerate() {
             if i == self.diff_selected {
                 lines.push(Line::from(vec![
-                    Span::styled(" ▶ ", Style::default().fg(theme::ACCENT).bold()),
+                    Span::styled("    ▶  ", Style::default().fg(theme::ACCENT).bold()),
                     Span::styled(diff.label(), Style::default().fg(theme::FG).bold()),
                 ]));
                 lines.push(Line::from(vec![
-                    Span::raw("     "),
+                    Span::raw("          "),
                     Span::styled(
                         diff.description(),
                         Style::default().fg(theme::FG_DIM).italic(),
@@ -276,11 +277,12 @@ impl ScenarioScreen {
                 ]));
             } else {
                 lines.push(Line::from(vec![
-                    Span::raw("   "),
+                    Span::raw("       "),
                     Span::styled(diff.label(), Style::default().fg(theme::FG_DIM)),
                 ]));
                 lines.push(Line::from(""));
             }
+            lines.push(Line::from(""));
         }
 
         let menu = Paragraph::new(lines).block(
