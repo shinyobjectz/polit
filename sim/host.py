@@ -4,10 +4,12 @@ import msgpack
 
 from sim.layers.household import HouseholdLayer
 from sim.layers.macro_economy import MacroEconomyLayer
+from sim.layers.sectors import SectorLayer
 
 _layers: list = [
-    MacroEconomyLayer(),  # macro runs first — household reads its output
-    HouseholdLayer(),
+    MacroEconomyLayer(),  # 1. macro runs first — GDP, inflation, unemployment
+    SectorLayer(),        # 2. sectors respond to macro conditions + shocks
+    HouseholdLayer(),     # 3. household reads macro + sector output
 ]
 
 
