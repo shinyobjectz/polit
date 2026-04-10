@@ -4,6 +4,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use std::collections::HashMap;
 
 use super::chat::{ChatStream, NpcAvatar};
+use super::music::MusicController;
 use super::theme;
 use crate::ai::context::GameContext;
 use crate::ai::{AiProvider, DmMode};
@@ -131,14 +132,16 @@ enum CreationPhase {
 /// Character creation screen
 pub struct CharacterCreationScreen {
     phase: CreationPhase,
-    // Basic form fields
-    form_field: usize, // 0=first, 1=last, 2=head, 3=eyes, 4=color
+    // Basic form fields — paginated
+    form_page: usize,    // 0=first name, 1=last name, 2=design (head/eyes/color)
+    design_field: usize, // within page 2: 0=head, 1=eyes, 2=color
     first_name: String,
     last_name: String,
     head_selected: usize,
     eyes_selected: usize,
     color_selected: usize,
     form_input: String,
+    frame_count: u64, // for animation timing
     // AI chat phase
     chat: ChatStream,
     input: String,
@@ -170,13 +173,15 @@ impl CharacterCreationScreen {
     pub fn new() -> Self {
         Self {
             phase: CreationPhase::BasicForm,
-            form_field: 0,
+            form_page: 0,
+            design_field: 0,
             first_name: String::new(),
             last_name: String::new(),
             head_selected: 0,
             eyes_selected: 0,
             color_selected: 0,
             form_input: String::new(),
+            frame_count: 0,
             chat: ChatStream::new(),
             input: String::new(),
             character: CharacterData::default(),
@@ -190,6 +195,7 @@ impl CharacterCreationScreen {
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
         ai: &mut dyn AiProvider,
+        music: &MusicController,
     ) -> Result<Option<CharacterData>, Box<dyn std::error::Error>> {
         // Phase 1: Basic form
         loop {
@@ -233,350 +239,348 @@ impl CharacterCreationScreen {
                         return Ok(Some(self.character.clone()));
                     }
                     self.draw(terminal)?;
-                    self.handle_input(ai)?;
+                    self.handle_input(ai, music)?;
                 }
             }
         }
     }
 
+    fn animated_avatar(&self) -> String {
+        let (left, right, _) = HEAD_OPTIONS[self.head_selected];
+        let (eyes, _) = EYE_OPTIONS[self.eyes_selected];
+        let cycle = self.frame_count % 90;
+        let display_eyes = if cycle >= 86 { "--" } else { eyes };
+        format!("{}{}{}", left, display_eyes, right)
+    }
+
+    fn breathing_offset(&self) -> u16 {
+        if (self.frame_count % 60) < 30 {
+            0
+        } else {
+            1
+        }
+    }
+
     fn draw_form(
-        &self,
+        &mut self,
         terminal: &mut ratatui::DefaultTerminal,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.frame_count += 1;
+        let page = self.form_page;
+        let input = self.form_input.clone();
         let first = self.first_name.clone();
         let last = self.last_name.clone();
-        let field = self.form_field;
-        let input = self.form_input.clone();
+        let avatar = self.animated_avatar();
+        let (avatar_color, _) = COLOR_OPTIONS[self.color_selected];
+        let breath = self.breathing_offset();
         let head_sel = self.head_selected;
         let eyes_sel = self.eyes_selected;
         let color_sel = self.color_selected;
-        let preview = build_avatar(head_sel, eyes_sel);
-        let (preview_color, _) = COLOR_OPTIONS[color_sel];
-
+        let design_field = self.design_field;
+        let full_name = format!("{} {}", first, last);
         terminal.draw(|frame| {
             let area = frame.area();
             frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
-
-            let content_height = 24u16;
-            let top_margin = area.height.saturating_sub(content_height + 4) / 3;
-
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(top_margin),
+                    Constraint::Percentage(20),
                     Constraint::Length(2),
                     Constraint::Length(2),
+                    Constraint::Length(1 + breath),
+                    Constraint::Length(1),
+                    Constraint::Length(1),
                     Constraint::Length(2),
-                    Constraint::Length(content_height),
-                    Constraint::Min(1),
+                    Constraint::Min(8),
                     Constraint::Length(2),
                 ])
                 .split(area);
 
-            // POLIT header
-            let title = Paragraph::new(Line::from(vec![
-                Span::styled("🇺🇸 ", Style::default()),
-                Span::styled("P O L I T", Style::default().fg(theme::FG).bold()),
-            ]))
-            .alignment(Alignment::Center);
-            frame.render_widget(title, layout[1]);
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("🇺🇸 ", Style::default()),
+                    Span::styled("P O L I T", Style::default().fg(theme::FG).bold()),
+                ]))
+                .alignment(Alignment::Center),
+                layout[1],
+            );
 
-            let subtitle = Paragraph::new(Line::from(Span::styled(
-                "Create Your Character",
-                Style::default().fg(theme::FG_DIM),
-            )))
-            .alignment(Alignment::Center);
-            frame.render_widget(subtitle, layout[2]);
+            let sub = match page {
+                0 => "What's your name?",
+                1 => "And your family name?",
+                2 => "Design your look",
+                _ => "",
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    sub,
+                    Style::default().fg(theme::FG_DIM),
+                )))
+                .alignment(Alignment::Center),
+                layout[2],
+            );
 
-            // Form card
-            let card_width = 56u16;
-            let card_x = area.x + (area.width.saturating_sub(card_width)) / 2;
-            let card_area = Rect::new(card_x, layout[4].y, card_width, content_height);
+            if page >= 1 || !first.is_empty() {
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        &avatar,
+                        Style::default().fg(avatar_color).bold(),
+                    )))
+                    .alignment(Alignment::Center),
+                    layout[4],
+                );
+                let ns = if page == 0 {
+                    first.clone()
+                } else {
+                    full_name.trim().to_string()
+                };
+                if !ns.is_empty() {
+                    frame.render_widget(
+                        Paragraph::new(Line::from(Span::styled(
+                            ns,
+                            Style::default().fg(avatar_color),
+                        )))
+                        .alignment(Alignment::Center),
+                        layout[5],
+                    );
+                }
+            }
 
-            let mut lines: Vec<Line> = vec![Line::from("")];
-
-            // Helper for text fields
-            let render_text_field =
-                |lines: &mut Vec<Line>, label: &str, value: &str, is_active: bool, input: &str| {
-                    lines.push(Line::from(Span::styled(
-                        format!("    {}", label),
-                        Style::default().fg(theme::FG_DIM),
-                    )));
-                    if is_active {
-                        lines.push(Line::from(vec![
-                            Span::styled("    ▶ ", Style::default().fg(theme::ACCENT)),
-                            Span::styled(input.to_string(), Style::default().fg(theme::FG).bold()),
+            match page {
+                0 | 1 => {
+                    let w = 40u16;
+                    let cx = area.x + (area.width.saturating_sub(w)) / 2;
+                    let ca = Rect::new(cx, layout[7].y, w, 3);
+                    let blk = Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme::ACCENT_BLUE))
+                        .style(Style::default().bg(theme::BG_HIGHLIGHT));
+                    let inner = blk.inner(ca);
+                    frame.render_widget(blk, ca);
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![
+                            Span::styled("▶ ", Style::default().fg(theme::ACCENT)),
+                            Span::styled(&input, Style::default().fg(theme::FG)),
                             Span::styled(
                                 "▊",
                                 Style::default()
                                     .fg(theme::FG_DIM)
                                     .add_modifier(Modifier::SLOW_BLINK),
                             ),
-                        ]));
+                        ])),
+                        inner,
+                    );
+                }
+                2 => {
+                    let w = 56u16;
+                    let cx = area.x + (area.width.saturating_sub(w)) / 2;
+                    let ca = Rect::new(cx, layout[7].y, w, 12);
+                    let mut lines: Vec<Line> = vec![Line::from("")];
+                    let hfg = if design_field == 0 {
+                        theme::FG
                     } else {
-                        let display = if value.is_empty() { "..." } else { value };
-                        lines.push(Line::from(vec![
-                            Span::raw("      "),
-                            Span::styled(display.to_string(), Style::default().fg(theme::FG_DIM)),
-                        ]));
-                    }
-                    lines.push(Line::from(""));
-                };
-
-            render_text_field(&mut lines, "First Name", &first, field == 0, &input);
-            render_text_field(&mut lines, "Last Name", &last, field == 1, &input);
-
-            // Preview
-            lines.push(Line::from(vec![
-                Span::raw("    Preview: "),
-                Span::styled(&preview, Style::default().fg(preview_color).bold()),
-                Span::raw(" "),
-                Span::styled(
-                    format!("{} {}", first.as_str(), last.as_str())
-                        .trim()
-                        .to_string(),
-                    Style::default().fg(preview_color).bold(),
-                ),
-            ]));
-            lines.push(Line::from(""));
-
-            // Head shape picker
-            lines.push(Line::from(Span::styled(
-                "    Head Shape",
-                Style::default().fg(theme::FG_DIM),
-            )));
-            if field == 2 {
-                let mut head_line = vec![Span::raw("    ")];
-                for (i, (l, r, label)) in HEAD_OPTIONS.iter().enumerate() {
-                    let face = format!("{}••{}", l, r);
-                    if i == head_sel {
-                        head_line.push(Span::styled(
-                            format!(" {} ", face),
+                        theme::FG_DIM
+                    };
+                    lines.push(Line::from(Span::styled(
+                        if design_field == 0 {
+                            "  ▶ Head"
+                        } else {
+                            "    Head"
+                        },
+                        Style::default().fg(hfg),
+                    )));
+                    let mut hs = vec![Span::raw("    ")];
+                    for (i, (l, r, _)) in HEAD_OPTIONS.iter().enumerate() {
+                        let f = format!("{}••{}", l, r);
+                        let s = if i == head_sel {
                             Style::default()
                                 .fg(theme::FG)
                                 .bold()
-                                .bg(theme::BG_HIGHLIGHT),
-                        ));
-                    } else {
-                        head_line.push(Span::styled(
-                            format!(" {} ", face),
-                            Style::default().fg(theme::FG_DIM),
-                        ));
+                                .bg(theme::BG_HIGHLIGHT)
+                        } else {
+                            Style::default().fg(theme::FG_MUTED)
+                        };
+                        hs.push(Span::styled(format!(" {} ", f), s));
                     }
-                }
-                lines.push(Line::from(head_line));
-                let (_, _, label) = HEAD_OPTIONS[head_sel];
-                lines.push(Line::from(Span::styled(
-                    format!("       {}", label),
-                    Style::default().fg(theme::FG_DIM),
-                )));
-            } else {
-                let (l, r, label) = HEAD_OPTIONS[head_sel];
-                lines.push(Line::from(vec![
-                    Span::raw("      "),
-                    Span::styled(format!("{}••{}", l, r), Style::default().fg(theme::FG_DIM)),
-                    Span::styled(format!("  {}", label), Style::default().fg(theme::FG_MUTED)),
-                ]));
-            }
-            lines.push(Line::from(""));
-
-            // Eyes picker
-            lines.push(Line::from(Span::styled(
-                "    Eyes",
-                Style::default().fg(theme::FG_DIM),
-            )));
-            if field == 3 {
-                // Show eyes in rows of 7
-                for row_start in (0..EYE_OPTIONS.len()).step_by(7) {
-                    let mut eye_line = vec![Span::raw("    ")];
-                    for i in row_start..(row_start + 7).min(EYE_OPTIONS.len()) {
-                        let (eyes, _) = EYE_OPTIONS[i];
-                        if i == eyes_sel {
-                            eye_line.push(Span::styled(
-                                format!(" {} ", eyes),
+                    lines.push(Line::from(hs));
+                    lines.push(Line::from(""));
+                    let efg = if design_field == 1 {
+                        theme::FG
+                    } else {
+                        theme::FG_DIM
+                    };
+                    lines.push(Line::from(Span::styled(
+                        if design_field == 1 {
+                            "  ▶ Eyes"
+                        } else {
+                            "    Eyes"
+                        },
+                        Style::default().fg(efg),
+                    )));
+                    for rs in (0..EYE_OPTIONS.len()).step_by(7) {
+                        let mut es = vec![Span::raw("    ")];
+                        for i in rs..(rs + 7).min(EYE_OPTIONS.len()) {
+                            let (e, _) = EYE_OPTIONS[i];
+                            let s = if i == eyes_sel {
                                 Style::default()
                                     .fg(theme::FG)
                                     .bold()
-                                    .bg(theme::BG_HIGHLIGHT),
-                            ));
-                        } else {
-                            eye_line.push(Span::styled(
-                                format!(" {} ", eyes),
-                                Style::default().fg(theme::FG_DIM),
-                            ));
+                                    .bg(theme::BG_HIGHLIGHT)
+                            } else {
+                                Style::default().fg(theme::FG_MUTED)
+                            };
+                            es.push(Span::styled(format!(" {} ", e), s));
                         }
+                        lines.push(Line::from(es));
                     }
-                    lines.push(Line::from(eye_line));
-                }
-                let (_, label) = EYE_OPTIONS[eyes_sel];
-                lines.push(Line::from(Span::styled(
-                    format!("       {}", label),
-                    Style::default().fg(theme::FG_DIM),
-                )));
-            } else {
-                let (eyes, label) = EYE_OPTIONS[eyes_sel];
-                lines.push(Line::from(vec![
-                    Span::raw("      "),
-                    Span::styled(eyes.to_string(), Style::default().fg(theme::FG_DIM)),
-                    Span::styled(format!("  {}", label), Style::default().fg(theme::FG_MUTED)),
-                ]));
-            }
-            lines.push(Line::from(""));
-
-            // Color picker
-            lines.push(Line::from(Span::styled(
-                "    Color",
-                Style::default().fg(theme::FG_DIM),
-            )));
-            if field == 4 {
-                let mut color_line = vec![Span::raw("    ")];
-                for (i, (color, label)) in COLOR_OPTIONS.iter().enumerate() {
-                    if i == color_sel {
-                        color_line.push(Span::styled(
-                            format!(" ██ "),
-                            Style::default().fg(*color).bg(theme::BG_HIGHLIGHT),
-                        ));
+                    lines.push(Line::from(""));
+                    let cfg = if design_field == 2 {
+                        theme::FG
                     } else {
-                        color_line.push(Span::styled(format!(" ██ "), Style::default().fg(*color)));
+                        theme::FG_DIM
+                    };
+                    lines.push(Line::from(Span::styled(
+                        if design_field == 2 {
+                            "  ▶ Color"
+                        } else {
+                            "    Color"
+                        },
+                        Style::default().fg(cfg),
+                    )));
+                    let mut cs = vec![Span::raw("    ")];
+                    for (i, (c, _)) in COLOR_OPTIONS.iter().enumerate() {
+                        let s = if i == color_sel {
+                            Style::default().fg(*c).bg(theme::BG_HIGHLIGHT)
+                        } else {
+                            Style::default().fg(*c)
+                        };
+                        cs.push(Span::styled(" ██ ", s));
                     }
+                    lines.push(Line::from(cs));
+                    let form = Paragraph::new(lines).block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(theme::BORDER))
+                            .style(Style::default().bg(theme::BG_SUBTLE)),
+                    );
+                    frame.render_widget(ratatui::widgets::Clear, ca);
+                    frame.render_widget(form, ca);
                 }
-                lines.push(Line::from(color_line));
-                let (_, label) = COLOR_OPTIONS[color_sel];
-                lines.push(Line::from(Span::styled(
-                    format!("       {}", label),
-                    Style::default().fg(theme::FG_DIM),
-                )));
-            } else {
-                let (color, label) = COLOR_OPTIONS[color_sel];
-                lines.push(Line::from(vec![
-                    Span::raw("      "),
-                    Span::styled("██", Style::default().fg(color)),
-                    Span::styled(format!("  {}", label), Style::default().fg(theme::FG_MUTED)),
-                ]));
+                _ => {}
             }
-
-            let form = Paragraph::new(lines).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::BORDER))
-                    .style(Style::default().bg(theme::BG_SUBTLE)),
-            );
-            frame.render_widget(ratatui::widgets::Clear, card_area);
-            frame.render_widget(form, card_area);
-
-            // Footer
-            let footer_text = match field {
-                0 | 1 => "Enter to confirm   Esc to go back",
-                2 | 3 | 4 => "← → to browse   Enter to confirm   Esc back",
+            let ft = match page {
+                0 | 1 => "Enter to continue   Esc back",
+                2 => "↑↓ section   ← → browse   Enter confirm",
                 _ => "",
             };
-            let footer = Paragraph::new(Line::from(Span::styled(
-                footer_text,
-                Style::default().fg(theme::FG_MUTED),
-            )))
-            .alignment(Alignment::Center);
-            frame.render_widget(footer, layout[6]);
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    ft,
+                    Style::default().fg(theme::FG_MUTED),
+                )))
+                .alignment(Alignment::Center),
+                layout[8],
+            );
         })?;
         Ok(())
     }
 
-    /// Handle input for the basic form. Returns true when form is complete.
     fn handle_form_input(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
-        if crossterm::event::poll(std::time::Duration::from_millis(50))? {
+        if crossterm::event::poll(std::time::Duration::from_millis(33))? {
             if let Event::Key(key) = crossterm::event::read()? {
                 if key.kind != KeyEventKind::Press {
                     return Ok(false);
                 }
-                match self.form_field {
-                    // Text input fields
-                    0 | 1 => match key.code {
+                match self.form_page {
+                    0 => match key.code {
                         KeyCode::Enter => {
                             if !self.form_input.is_empty() {
-                                if self.form_field == 0 {
-                                    self.first_name = self.form_input.clone();
-                                } else {
-                                    self.last_name = self.form_input.clone();
-                                }
+                                self.first_name = self.form_input.clone();
                                 self.form_input.clear();
-                                self.form_field += 1;
+                                self.form_page = 1;
                             }
                         }
                         KeyCode::Backspace => {
                             self.form_input.pop();
-                        }
-                        KeyCode::Esc => {
-                            if self.form_field > 0 {
-                                self.form_field -= 1;
-                                self.form_input = if self.form_field == 0 {
-                                    self.first_name.clone()
-                                } else {
-                                    self.last_name.clone()
-                                };
-                            }
                         }
                         KeyCode::Char(c) => {
                             self.form_input.push(c);
                         }
                         _ => {}
                     },
-                    // Head shape picker
+                    1 => match key.code {
+                        KeyCode::Enter => {
+                            if !self.form_input.is_empty() {
+                                self.last_name = self.form_input.clone();
+                                self.form_input.clear();
+                                self.form_page = 2;
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            self.form_input.pop();
+                        }
+                        KeyCode::Esc => {
+                            self.form_page = 0;
+                            self.form_input = self.first_name.clone();
+                        }
+                        KeyCode::Char(c) => {
+                            self.form_input.push(c);
+                        }
+                        _ => {}
+                    },
                     2 => match key.code {
-                        KeyCode::Left => {
-                            if self.head_selected > 0 {
-                                self.head_selected -= 1;
+                        KeyCode::Up => {
+                            if self.design_field > 0 {
+                                self.design_field -= 1;
                             }
                         }
-                        KeyCode::Right => {
-                            if self.head_selected < HEAD_OPTIONS.len() - 1 {
-                                self.head_selected += 1;
+                        KeyCode::Down => {
+                            if self.design_field < 2 {
+                                self.design_field += 1;
                             }
                         }
-                        KeyCode::Enter => {
-                            self.form_field = 3;
-                        }
-                        KeyCode::Esc => {
-                            self.form_field = 1;
-                            self.form_input = self.last_name.clone();
-                        }
-                        _ => {}
-                    },
-                    // Eyes picker
-                    3 => match key.code {
-                        KeyCode::Left => {
-                            if self.eyes_selected > 0 {
-                                self.eyes_selected -= 1;
+                        KeyCode::Left => match self.design_field {
+                            0 => {
+                                if self.head_selected > 0 {
+                                    self.head_selected -= 1;
+                                }
                             }
-                        }
-                        KeyCode::Right => {
-                            if self.eyes_selected < EYE_OPTIONS.len() - 1 {
-                                self.eyes_selected += 1;
+                            1 => {
+                                if self.eyes_selected > 0 {
+                                    self.eyes_selected -= 1;
+                                }
                             }
-                        }
-                        KeyCode::Enter => {
-                            self.form_field = 4;
-                        }
-                        KeyCode::Esc => {
-                            self.form_field = 2;
-                        }
-                        _ => {}
-                    },
-                    // Color picker
-                    4 => match key.code {
-                        KeyCode::Left => {
-                            if self.color_selected > 0 {
-                                self.color_selected -= 1;
+                            2 => {
+                                if self.color_selected > 0 {
+                                    self.color_selected -= 1;
+                                }
                             }
-                        }
-                        KeyCode::Right => {
-                            if self.color_selected < COLOR_OPTIONS.len() - 1 {
-                                self.color_selected += 1;
+                            _ => {}
+                        },
+                        KeyCode::Right => match self.design_field {
+                            0 => {
+                                if self.head_selected < HEAD_OPTIONS.len() - 1 {
+                                    self.head_selected += 1;
+                                }
                             }
-                        }
+                            1 => {
+                                if self.eyes_selected < EYE_OPTIONS.len() - 1 {
+                                    self.eyes_selected += 1;
+                                }
+                            }
+                            2 => {
+                                if self.color_selected < COLOR_OPTIONS.len() - 1 {
+                                    self.color_selected += 1;
+                                }
+                            }
+                            _ => {}
+                        },
                         KeyCode::Enter => {
                             return Ok(true);
-                        } // Form complete!
+                        }
                         KeyCode::Esc => {
-                            self.form_field = 3;
+                            self.form_page = 1;
+                            self.form_input = self.last_name.clone();
                         }
                         _ => {}
                     },
@@ -821,7 +825,11 @@ impl CharacterCreationScreen {
         Ok(())
     }
 
-    fn handle_input(&mut self, ai: &mut dyn AiProvider) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_input(
+        &mut self,
+        ai: &mut dyn AiProvider,
+        music: &MusicController,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(std::time::Duration::from_millis(16))? {
             let evt = event::read()?;
 
@@ -857,6 +865,7 @@ impl CharacterCreationScreen {
                     }
                     KeyCode::Enter => {
                         if !self.input.is_empty() {
+                            music.play_select();
                             let input = self.input.clone();
                             self.input.clear();
                             self.dm_question_count += 1;

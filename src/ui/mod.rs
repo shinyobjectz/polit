@@ -75,7 +75,7 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             // Character creation (mock AI)
             let mut mock_ai = crate::ai::mock::MockProvider::new();
             let mut char_screen = character_creation::CharacterCreationScreen::new();
-            let _character = char_screen.run(&mut terminal, &mut mock_ai)?;
+            let _character = char_screen.run(&mut terminal, &mut mock_ai, &music)?;
 
             // Stop music before entering the game
             music.stop();
@@ -154,7 +154,7 @@ pub fn run_app_with_provider(
 
             // Character creation (AI-guided)
             let mut char_screen = character_creation::CharacterCreationScreen::new();
-            let _character = char_screen.run(&mut terminal, provider.as_mut())?;
+            let _character = char_screen.run(&mut terminal, provider.as_mut(), &music)?;
         }
         TitleAction::ContinueCampaign => {}
     }
