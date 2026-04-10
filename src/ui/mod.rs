@@ -1,5 +1,6 @@
 pub mod app;
 pub mod chat;
+pub mod scenario;
 pub mod theme;
 pub mod title;
 
@@ -43,7 +44,31 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             restore_terminal();
             return Ok(());
         }
-        TitleAction::NewCampaign | TitleAction::ContinueCampaign => {
+        TitleAction::NewCampaign => {
+            // Scenario select
+            let mut scenario_screen = scenario::ScenarioScreen::new();
+            let config = scenario_screen.run(&mut terminal)?;
+            if config.is_none() {
+                restore_terminal();
+                return Ok(());
+            }
+            let _scenario_config = config.unwrap();
+
+            // TODO: cinematic intro here
+            // TODO: character creation here
+
+            let state = GameState::new(paths.db.to_str().unwrap())?;
+            let channels = Channels::new();
+            let (ui_channels, game_channels) = channels.split();
+            let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+            let mut app_inst = app::App::new(ui_channels);
+            let result = app_inst.run(&mut terminal);
+            restore_terminal();
+            let _ = game_handle.join();
+            return result;
+        }
+        TitleAction::ContinueCampaign => {
             let state = GameState::new(paths.db.to_str().unwrap())?;
             let channels = Channels::new();
             let (ui_channels, game_channels) = channels.split();
@@ -78,7 +103,17 @@ pub fn run_app_with_provider(
             restore_terminal();
             return Ok(());
         }
-        _ => {}
+        TitleAction::NewCampaign => {
+            let mut scenario_screen = scenario::ScenarioScreen::new();
+            let config = scenario_screen.run(&mut terminal)?;
+            if config.is_none() {
+                restore_terminal();
+                return Ok(());
+            }
+            let _scenario_config = config.unwrap();
+            // TODO: intro + character creation
+        }
+        TitleAction::ContinueCampaign => {}
     }
 
     let state = GameState::with_provider(paths.db.to_str().unwrap(), provider)?;
