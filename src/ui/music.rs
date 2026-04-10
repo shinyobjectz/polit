@@ -92,7 +92,12 @@ impl MusicController {
 
 impl Drop for MusicController {
     fn drop(&mut self) {
-        self.stop();
+        let _ = self.cmd_tx.send(MusicCommand::Shutdown);
+        // Wait for the audio thread to actually stop — ensures engine.stop_all() runs
+        // before the process exits and the OS audio buffer drains.
+        if let Some(handle) = self._handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -118,15 +123,15 @@ const BB5: f32 = 932.33;
 fn compose_anthem() -> tunes::composition::Composition {
     use tunes::prelude::*;
 
-    // 30 BPM in 3/4 — each beat = 2 seconds, each measure = 6 seconds.
-    // Durations below are in beats: 1.0 = quarter, 1.5 = dotted quarter, etc.
-    let mut comp = Composition::new(Tempo::new(30.0));
+    // 50 BPM in 3/4 — half the normal tempo. Slow enough to feel dreamy,
+    // fast enough that the melodic shape is still recognizable.
+    let mut comp = Composition::new(Tempo::new(50.0));
 
     // ── Melody: complete Star-Spangled Banner in Bb major ───────
     comp.track("melody")
-        .reverb(Reverb::new(0.9, 0.2, 0.75))
-        .filter(Filter::low_pass(1000.0, 0.3))
-        .volume(0.15)
+        .reverb(Reverb::new(0.5, 0.5, 0.3))
+        .filter(Filter::low_pass(1800.0, 0.3))
+        .volume(0.22)
         // "Oh say can you see"
         .note(&[BB3], 1.5)
         .note(&[G3], 0.5)
@@ -250,9 +255,9 @@ fn compose_anthem() -> tunes::composition::Composition {
     // ── Pad: follows the harmony under the melody ───────────────
     // Simplified chord changes: Bb → Eb → F → Bb, repeated
     comp.track("pad")
-        .reverb(Reverb::new(0.95, 0.15, 0.85))
+        .reverb(Reverb::new(0.5, 0.4, 0.3))
         .filter(Filter::low_pass(600.0, 0.2))
-        .volume(0.12)
+        .volume(0.07)
         // A section (phrases 1-4)
         .note(&[BB3, D4, F4], 10.0) // Bb major
         .note(&[EB3, G3, BB3], 6.0) // Eb major
@@ -276,9 +281,9 @@ fn compose_anthem() -> tunes::composition::Composition {
 
     // ── Sub-bass: root motion ───────────────────────────────────
     comp.track("bass")
-        .reverb(Reverb::new(0.8, 0.4, 0.5))
+        .reverb(Reverb::new(0.3, 0.6, 0.2))
         .filter(Filter::low_pass(200.0, 0.1))
-        .volume(0.06)
+        .volume(0.04)
         .note(&[BB3 / 2.0], 22.0) // Bb2
         .note(&[EB3 / 2.0], 12.0) // Eb2
         .note(&[F3 / 2.0], 12.0) // F2
@@ -333,7 +338,7 @@ fn compose_intro_slide_0() -> tunes::composition::Composition {
     use tunes::prelude::*;
     let mut comp = Composition::new(Tempo::new(25.0));
     comp.track("pad")
-        .reverb(Reverb::new(0.95, 0.15, 0.9))
+        .reverb(Reverb::new(0.5, 0.5, 0.35))
         .filter(Filter::low_pass(500.0, 0.2))
         .volume(0.12)
         .note(&[BB3], 24.0);
@@ -345,13 +350,13 @@ fn compose_intro_slide_1() -> tunes::composition::Composition {
     use tunes::prelude::*;
     let mut comp = Composition::new(Tempo::new(25.0));
     comp.track("pad")
-        .reverb(Reverb::new(0.95, 0.15, 0.9))
+        .reverb(Reverb::new(0.5, 0.5, 0.35))
         .filter(Filter::low_pass(600.0, 0.2))
         .volume(0.14)
         .note(&[BB3, D4, F4], 12.0)
         .note(&[EB3, G3, BB3], 12.0);
     comp.track("high")
-        .reverb(Reverb::new(0.9, 0.2, 0.8))
+        .reverb(Reverb::new(0.4, 0.5, 0.3))
         .filter(Filter::low_pass(1200.0, 0.3))
         .volume(0.06)
         .wait(6.0)
@@ -365,13 +370,13 @@ fn compose_intro_slide_2() -> tunes::composition::Composition {
     use tunes::prelude::*;
     let mut comp = Composition::new(Tempo::new(28.0));
     comp.track("pad")
-        .reverb(Reverb::new(0.95, 0.15, 0.85))
+        .reverb(Reverb::new(0.5, 0.4, 0.3))
         .filter(Filter::low_pass(700.0, 0.2))
         .volume(0.15)
         .note(&[F3, AB3, C4], 10.0)
         .note(&[BB3, D4, F4], 10.0);
     comp.track("melody")
-        .reverb(Reverb::new(0.9, 0.2, 0.75))
+        .reverb(Reverb::new(0.4, 0.5, 0.25))
         .filter(Filter::low_pass(1000.0, 0.3))
         .volume(0.08)
         .wait(3.0)
@@ -386,12 +391,12 @@ fn compose_intro_slide_3() -> tunes::composition::Composition {
     use tunes::prelude::*;
     let mut comp = Composition::new(Tempo::new(30.0));
     comp.track("pad")
-        .reverb(Reverb::new(0.95, 0.1, 0.85))
+        .reverb(Reverb::new(0.5, 0.4, 0.3))
         .filter(Filter::low_pass(800.0, 0.25))
         .volume(0.16)
         .note(&[BB3, D4, F4, BB4], 24.0);
     comp.track("melody")
-        .reverb(Reverb::new(0.9, 0.15, 0.8))
+        .reverb(Reverb::new(0.4, 0.5, 0.25))
         .filter(Filter::low_pass(1200.0, 0.3))
         .volume(0.10)
         .wait(4.0)
@@ -416,14 +421,33 @@ fn run_audio_thread(
     let nav_sfx = compose_nav_sfx().into_mixer();
     let select_sfx = compose_select_sfx().into_mixer();
 
-    // Pre-render typewriter tick to a WAV sample for instant playback
+    // Pre-render typewriter tick to a WAV sample for instant playback.
+    // Suppress stdout/stderr during export — tunes prints progress that corrupts the TUI.
     let mut tick_mixer = compose_typewriter_tick().into_mixer();
     let tick_path = std::env::temp_dir().join("polit_tick.wav");
     let tick_path_str = tick_path
         .to_str()
         .unwrap_or("/tmp/polit_tick.wav")
         .to_string();
-    tick_mixer.export_wav(&tick_path_str, 44100)?;
+    {
+        use std::os::unix::io::AsRawFd;
+        let devnull = std::fs::File::open("/dev/null").ok();
+        let saved_stdout = unsafe { libc::dup(1) };
+        let saved_stderr = unsafe { libc::dup(2) };
+        if let Some(ref dn) = devnull {
+            unsafe {
+                libc::dup2(dn.as_raw_fd(), 1);
+                libc::dup2(dn.as_raw_fd(), 2);
+            }
+        }
+        let _ = tick_mixer.export_wav(&tick_path_str, 44100);
+        unsafe {
+            libc::dup2(saved_stdout, 1);
+            libc::dup2(saved_stderr, 2);
+            libc::close(saved_stdout);
+            libc::close(saved_stderr);
+        }
+    }
     engine.preload_sample(&tick_path_str)?;
 
     let intro_slides: Vec<_> = vec![

@@ -71,23 +71,60 @@ impl CharacterData {
 }
 
 /// Available avatar options
-const AVATAR_OPTIONS: &[(&str, &str, Color)] = &[
-    ("[••]", "Alert", Color::Cyan),
-    ("[°°]", "Glasses", Color::LightBlue),
-    ("[^^]", "Friendly", Color::Green),
-    ("[──]", "Stern", Color::Yellow),
-    ("[¬¬]", "Skeptical", Color::Red),
-    ("(••)", "Soft", Color::Magenta),
-    ("(°°)", "Studious", Color::LightGreen),
-    ("(^^)", "Warm", Color::LightCyan),
-    ("{••}", "Sharp", Color::LightRed),
-    ("{°°}", "Focused", Color::LightYellow),
-    ("|••|", "Stoic", Color::White),
-    ("|──|", "Resolute", Color::Rgb(180, 140, 100)),
+/// Head shapes for avatar
+const HEAD_OPTIONS: &[(&str, &str, &str)] = &[
+    // (left, right, label)
+    ("[", "]", "Square"),
+    ("(", ")", "Round"),
+    ("{", "}", "Curly"),
+    ("|", "|", "Pipe"),
+    ("⟦", "⟧", "Formal"),
+    ("⟨", "⟩", "Sleek"),
+    ("╔", "╗", "Rigid"),
+    ("▐", "▌", "Solid"),
 ];
 
+/// Eye options for avatar
+const EYE_OPTIONS: &[(&str, &str)] = &[
+    ("••", "Alert"),
+    ("°°", "Glasses"),
+    ("^^", "Friendly"),
+    ("──", "Stern"),
+    ("¬¬", "Skeptical"),
+    ("..", "Quiet"),
+    ("**", "Intense"),
+    ("@@", "Wide-eyed"),
+    (">>", "Determined"),
+    ("==", "Squinting"),
+    ("~~", "Relaxed"),
+    ("oo", "Open"),
+    ("--", "Tired"),
+    ("::", "Analytical"),
+];
+
+/// Color options for avatar
+const COLOR_OPTIONS: &[(Color, &str)] = &[
+    (Color::Cyan, "Cyan"),
+    (Color::LightBlue, "Blue"),
+    (Color::Green, "Green"),
+    (Color::Yellow, "Gold"),
+    (Color::Red, "Red"),
+    (Color::Magenta, "Purple"),
+    (Color::LightGreen, "Lime"),
+    (Color::LightCyan, "Teal"),
+    (Color::LightRed, "Coral"),
+    (Color::White, "White"),
+];
+
+/// Build the avatar string from selections
+fn build_avatar(head: usize, eyes: usize) -> String {
+    let (left, right, _) = HEAD_OPTIONS[head];
+    let (eye_chars, _) = EYE_OPTIONS[eyes];
+    format!("{}{}{}", left, eye_chars, right)
+}
+
 enum CreationPhase {
-    BasicForm, // First/last name + avatar pick
+    BasicForm, // First/last name + avatar build
     AiChat,    // AI-guided deeper creation
 }
 
@@ -95,10 +132,12 @@ enum CreationPhase {
 pub struct CharacterCreationScreen {
     phase: CreationPhase,
     // Basic form fields
-    form_field: usize, // 0=first, 1=last, 2=avatar
+    form_field: usize, // 0=first, 1=last, 2=head, 3=eyes, 4=color
     first_name: String,
     last_name: String,
-    avatar_selected: usize,
+    head_selected: usize,
+    eyes_selected: usize,
+    color_selected: usize,
     form_input: String,
     // AI chat phase
     chat: ChatStream,
@@ -134,7 +173,9 @@ impl CharacterCreationScreen {
             form_field: 0,
             first_name: String::new(),
             last_name: String::new(),
-            avatar_selected: 0,
+            head_selected: 0,
+            eyes_selected: 0,
+            color_selected: 0,
             form_input: String::new(),
             chat: ChatStream::new(),
             input: String::new(),
@@ -159,10 +200,12 @@ impl CharacterCreationScreen {
                         // Form complete — transition to AI chat
                         let full_name =
                             format!("{} {}", self.first_name.trim(), self.last_name.trim());
-                        let (face, _, color) = AVATAR_OPTIONS[self.avatar_selected];
+                        let avatar_face = build_avatar(self.head_selected, self.eyes_selected);
+                        let (avatar_color, _) = COLOR_OPTIONS[self.color_selected];
                         self.character.set("name", &full_name);
-                        self.character.set("avatar_face", face);
-                        self.character.set("avatar_color", &format!("{:?}", color));
+                        self.character.set("avatar_face", &avatar_face);
+                        self.character
+                            .set("avatar_color", &format!("{:?}", avatar_color));
 
                         // Start AI chat with context
                         let greeting = self.generate_ai_response(
@@ -204,26 +247,29 @@ impl CharacterCreationScreen {
         let last = self.last_name.clone();
         let field = self.form_field;
         let input = self.form_input.clone();
-        let avatar_sel = self.avatar_selected;
+        let head_sel = self.head_selected;
+        let eyes_sel = self.eyes_selected;
+        let color_sel = self.color_selected;
+        let preview = build_avatar(head_sel, eyes_sel);
+        let (preview_color, _) = COLOR_OPTIONS[color_sel];
 
         terminal.draw(|frame| {
             let area = frame.area();
             frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
-            // Calculate content block height
-            let content_height = 20u16;
+            let content_height = 24u16;
             let top_margin = area.height.saturating_sub(content_height + 4) / 3;
 
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(top_margin),
-                    Constraint::Length(2),              // POLIT header
-                    Constraint::Length(2),              // Subtitle
-                    Constraint::Length(2),              // Spacer
-                    Constraint::Length(content_height), // Form
-                    Constraint::Min(1),                 // Fill
-                    Constraint::Length(2),              // Footer
+                    Constraint::Length(2),
+                    Constraint::Length(2),
+                    Constraint::Length(2),
+                    Constraint::Length(content_height),
+                    Constraint::Min(1),
+                    Constraint::Length(2),
                 ])
                 .split(area);
 
@@ -243,110 +289,169 @@ impl CharacterCreationScreen {
             frame.render_widget(subtitle, layout[2]);
 
             // Form card
-            let card_width = 50u16;
+            let card_width = 56u16;
             let card_x = area.x + (area.width.saturating_sub(card_width)) / 2;
             let card_area = Rect::new(card_x, layout[4].y, card_width, content_height);
 
             let mut lines: Vec<Line> = vec![Line::from("")];
 
-            // First Name field
-            let first_style = if field == 0 {
-                Style::default().fg(theme::FG).bold()
-            } else {
-                Style::default().fg(theme::FG_DIM)
-            };
-            lines.push(Line::from(Span::styled(
-                "    First Name",
-                Style::default().fg(theme::FG_DIM),
-            )));
-            if field == 0 {
-                lines.push(Line::from(vec![
-                    Span::styled("    ▶ ", Style::default().fg(theme::ACCENT)),
-                    Span::styled(&input, first_style),
-                    Span::styled(
-                        "▊",
-                        Style::default()
-                            .fg(theme::FG_DIM)
-                            .add_modifier(Modifier::SLOW_BLINK),
-                    ),
-                ]));
-            } else {
-                lines.push(Line::from(vec![
-                    Span::styled("      ", Style::default()),
-                    Span::styled(if first.is_empty() { "..." } else { &first }, first_style),
-                ]));
-            }
+            // Helper for text fields
+            let render_text_field =
+                |lines: &mut Vec<Line>, label: &str, value: &str, is_active: bool, input: &str| {
+                    lines.push(Line::from(Span::styled(
+                        format!("    {}", label),
+                        Style::default().fg(theme::FG_DIM),
+                    )));
+                    if is_active {
+                        lines.push(Line::from(vec![
+                            Span::styled("    ▶ ", Style::default().fg(theme::ACCENT)),
+                            Span::styled(input.to_string(), Style::default().fg(theme::FG).bold()),
+                            Span::styled(
+                                "▊",
+                                Style::default()
+                                    .fg(theme::FG_DIM)
+                                    .add_modifier(Modifier::SLOW_BLINK),
+                            ),
+                        ]));
+                    } else {
+                        let display = if value.is_empty() { "..." } else { value };
+                        lines.push(Line::from(vec![
+                            Span::raw("      "),
+                            Span::styled(display.to_string(), Style::default().fg(theme::FG_DIM)),
+                        ]));
+                    }
+                    lines.push(Line::from(""));
+                };
+
+            render_text_field(&mut lines, "First Name", &first, field == 0, &input);
+            render_text_field(&mut lines, "Last Name", &last, field == 1, &input);
+
+            // Preview
+            lines.push(Line::from(vec![
+                Span::raw("    Preview: "),
+                Span::styled(&preview, Style::default().fg(preview_color).bold()),
+                Span::raw(" "),
+                Span::styled(
+                    format!("{} {}", first.as_str(), last.as_str())
+                        .trim()
+                        .to_string(),
+                    Style::default().fg(preview_color).bold(),
+                ),
+            ]));
             lines.push(Line::from(""));
 
-            // Last Name field
-            let last_style = if field == 1 {
-                Style::default().fg(theme::FG).bold()
-            } else {
-                Style::default().fg(theme::FG_DIM)
-            };
+            // Head shape picker
             lines.push(Line::from(Span::styled(
-                "    Last Name",
+                "    Head Shape",
                 Style::default().fg(theme::FG_DIM),
             )));
-            if field == 1 {
-                lines.push(Line::from(vec![
-                    Span::styled("    ▶ ", Style::default().fg(theme::ACCENT)),
-                    Span::styled(&input, last_style),
-                    Span::styled(
-                        "▊",
-                        Style::default()
-                            .fg(theme::FG_DIM)
-                            .add_modifier(Modifier::SLOW_BLINK),
-                    ),
-                ]));
-            } else {
-                lines.push(Line::from(vec![
-                    Span::styled("      ", Style::default()),
-                    Span::styled(if last.is_empty() { "..." } else { &last }, last_style),
-                ]));
-            }
-            lines.push(Line::from(""));
-
-            // Avatar picker
-            lines.push(Line::from(Span::styled(
-                "    Choose Your Face",
-                Style::default().fg(theme::FG_DIM),
-            )));
-            lines.push(Line::from(""));
-
             if field == 2 {
-                // Show avatar grid
-                let mut avatar_line = vec![Span::styled("    ", Style::default())];
-                for (i, (face, label, color)) in AVATAR_OPTIONS.iter().enumerate() {
-                    if i == avatar_sel {
-                        avatar_line.push(Span::styled(
-                            format!(" [{}] ", face),
-                            Style::default().fg(*color).bold().bg(theme::BG_HIGHLIGHT),
+                let mut head_line = vec![Span::raw("    ")];
+                for (i, (l, r, label)) in HEAD_OPTIONS.iter().enumerate() {
+                    let face = format!("{}••{}", l, r);
+                    if i == head_sel {
+                        head_line.push(Span::styled(
+                            format!(" {} ", face),
+                            Style::default()
+                                .fg(theme::FG)
+                                .bold()
+                                .bg(theme::BG_HIGHLIGHT),
                         ));
                     } else {
-                        avatar_line.push(Span::styled(
-                            format!("  {}  ", face),
-                            Style::default().fg(*color),
+                        head_line.push(Span::styled(
+                            format!(" {} ", face),
+                            Style::default().fg(theme::FG_DIM),
                         ));
                     }
                 }
-                lines.push(Line::from(avatar_line));
-
-                // Label for selected
-                let (_, label, _) = AVATAR_OPTIONS[avatar_sel];
-                lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled("    ", Style::default()),
-                    Span::styled(
-                        format!("← → to browse   Selected: {}", label),
-                        Style::default().fg(theme::FG_DIM),
-                    ),
-                ]));
+                lines.push(Line::from(head_line));
+                let (_, _, label) = HEAD_OPTIONS[head_sel];
+                lines.push(Line::from(Span::styled(
+                    format!("       {}", label),
+                    Style::default().fg(theme::FG_DIM),
+                )));
             } else {
-                let (face, _, color) = AVATAR_OPTIONS[avatar_sel];
+                let (l, r, label) = HEAD_OPTIONS[head_sel];
                 lines.push(Line::from(vec![
-                    Span::styled("      ", Style::default()),
-                    Span::styled(face.to_string(), Style::default().fg(color)),
+                    Span::raw("      "),
+                    Span::styled(format!("{}••{}", l, r), Style::default().fg(theme::FG_DIM)),
+                    Span::styled(format!("  {}", label), Style::default().fg(theme::FG_MUTED)),
+                ]));
+            }
+            lines.push(Line::from(""));
+
+            // Eyes picker
+            lines.push(Line::from(Span::styled(
+                "    Eyes",
+                Style::default().fg(theme::FG_DIM),
+            )));
+            if field == 3 {
+                // Show eyes in rows of 7
+                for row_start in (0..EYE_OPTIONS.len()).step_by(7) {
+                    let mut eye_line = vec![Span::raw("    ")];
+                    for i in row_start..(row_start + 7).min(EYE_OPTIONS.len()) {
+                        let (eyes, _) = EYE_OPTIONS[i];
+                        if i == eyes_sel {
+                            eye_line.push(Span::styled(
+                                format!(" {} ", eyes),
+                                Style::default()
+                                    .fg(theme::FG)
+                                    .bold()
+                                    .bg(theme::BG_HIGHLIGHT),
+                            ));
+                        } else {
+                            eye_line.push(Span::styled(
+                                format!(" {} ", eyes),
+                                Style::default().fg(theme::FG_DIM),
+                            ));
+                        }
+                    }
+                    lines.push(Line::from(eye_line));
+                }
+                let (_, label) = EYE_OPTIONS[eyes_sel];
+                lines.push(Line::from(Span::styled(
+                    format!("       {}", label),
+                    Style::default().fg(theme::FG_DIM),
+                )));
+            } else {
+                let (eyes, label) = EYE_OPTIONS[eyes_sel];
+                lines.push(Line::from(vec![
+                    Span::raw("      "),
+                    Span::styled(eyes.to_string(), Style::default().fg(theme::FG_DIM)),
+                    Span::styled(format!("  {}", label), Style::default().fg(theme::FG_MUTED)),
+                ]));
+            }
+            lines.push(Line::from(""));
+
+            // Color picker
+            lines.push(Line::from(Span::styled(
+                "    Color",
+                Style::default().fg(theme::FG_DIM),
+            )));
+            if field == 4 {
+                let mut color_line = vec![Span::raw("    ")];
+                for (i, (color, label)) in COLOR_OPTIONS.iter().enumerate() {
+                    if i == color_sel {
+                        color_line.push(Span::styled(
+                            format!(" ██ "),
+                            Style::default().fg(*color).bg(theme::BG_HIGHLIGHT),
+                        ));
+                    } else {
+                        color_line.push(Span::styled(format!(" ██ "), Style::default().fg(*color)));
+                    }
+                }
+                lines.push(Line::from(color_line));
+                let (_, label) = COLOR_OPTIONS[color_sel];
+                lines.push(Line::from(Span::styled(
+                    format!("       {}", label),
+                    Style::default().fg(theme::FG_DIM),
+                )));
+            } else {
+                let (color, label) = COLOR_OPTIONS[color_sel];
+                lines.push(Line::from(vec![
+                    Span::raw("      "),
+                    Span::styled("██", Style::default().fg(color)),
+                    Span::styled(format!("  {}", label), Style::default().fg(theme::FG_MUTED)),
                 ]));
             }
 
@@ -362,7 +467,7 @@ impl CharacterCreationScreen {
             // Footer
             let footer_text = match field {
                 0 | 1 => "Enter to confirm   Esc to go back",
-                2 => "← → to browse   Enter to confirm",
+                2 | 3 | 4 => "← → to browse   Enter to confirm   Esc back",
                 _ => "",
             };
             let footer = Paragraph::new(Line::from(Span::styled(
@@ -383,7 +488,7 @@ impl CharacterCreationScreen {
                     return Ok(false);
                 }
                 match self.form_field {
-                    // Text input fields (first name, last name)
+                    // Text input fields
                     0 | 1 => match key.code {
                         KeyCode::Enter => {
                             if !self.form_input.is_empty() {
@@ -414,24 +519,64 @@ impl CharacterCreationScreen {
                         }
                         _ => {}
                     },
-                    // Avatar picker
+                    // Head shape picker
                     2 => match key.code {
                         KeyCode::Left => {
-                            if self.avatar_selected > 0 {
-                                self.avatar_selected -= 1;
+                            if self.head_selected > 0 {
+                                self.head_selected -= 1;
                             }
                         }
                         KeyCode::Right => {
-                            if self.avatar_selected < AVATAR_OPTIONS.len() - 1 {
-                                self.avatar_selected += 1;
+                            if self.head_selected < HEAD_OPTIONS.len() - 1 {
+                                self.head_selected += 1;
                             }
                         }
                         KeyCode::Enter => {
-                            return Ok(true); // Form complete
+                            self.form_field = 3;
                         }
                         KeyCode::Esc => {
                             self.form_field = 1;
                             self.form_input = self.last_name.clone();
+                        }
+                        _ => {}
+                    },
+                    // Eyes picker
+                    3 => match key.code {
+                        KeyCode::Left => {
+                            if self.eyes_selected > 0 {
+                                self.eyes_selected -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if self.eyes_selected < EYE_OPTIONS.len() - 1 {
+                                self.eyes_selected += 1;
+                            }
+                        }
+                        KeyCode::Enter => {
+                            self.form_field = 4;
+                        }
+                        KeyCode::Esc => {
+                            self.form_field = 2;
+                        }
+                        _ => {}
+                    },
+                    // Color picker
+                    4 => match key.code {
+                        KeyCode::Left => {
+                            if self.color_selected > 0 {
+                                self.color_selected -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if self.color_selected < COLOR_OPTIONS.len() - 1 {
+                                self.color_selected += 1;
+                            }
+                        }
+                        KeyCode::Enter => {
+                            return Ok(true);
+                        } // Form complete!
+                        KeyCode::Esc => {
+                            self.form_field = 3;
                         }
                         _ => {}
                     },
