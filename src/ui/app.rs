@@ -2,54 +2,40 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use super::chat::ChatStream;
+use super::chat::{ChatStream, NpcAvatar};
+use super::theme;
 use crate::engine::channels::{UiChannels, UiCommand, UiMessage};
-
-/// A card as displayed in the UI (lightweight view, no gameplay logic)
-#[derive(Debug, Clone)]
-pub struct CardView {
-    pub id: String,
-    pub name: String,
-    pub card_type: String, // "tactic", "asset", "position"
-    pub category: String,
-    pub rarity: String,
-    pub description: String,
-    pub play_count: u32,
-}
 
 /// Main application state (UI thread only)
 pub struct App {
     pub chat: ChatStream,
     pub input: String,
     pub should_quit: bool,
-    pub overlay: Option<Overlay>,
     pub channels: UiChannels,
-    // Player's deck (for display in overlay)
-    pub deck: Vec<CardView>,
-    pub coherence_label: String,
-    pub coherence_score: i32,
-    // Status bar state (updated via messages from game thread)
+    // Status bar
     pub week: u32,
     pub year: u32,
     pub phase: String,
     pub ap_current: i32,
     pub ap_max: i32,
+    // Slash autocomplete
+    pub showing_slash_menu: bool,
+    pub slash_filter: String,
+    pub slash_selected: usize,
 }
 
-/// Floating overlay types
-#[derive(Debug, Clone)]
-pub enum Overlay {
-    CommandPalette,
-    Relationships,
-    Deck,
-    Map,
-    Laws,
-    News,
-    Staff,
-    Intel,
-    Economy,
-    Help,
-}
+/// Slash commands available
+const SLASH_COMMANDS: &[(&str, &str)] = &[
+    ("meet", "Meet with someone"),
+    ("call", "Phone call (1 AP)"),
+    ("speech", "Give a speech"),
+    ("campaign", "Campaign in district"),
+    ("draft", "Draft legislation"),
+    ("end", "End turn"),
+    ("save", "Save game"),
+    ("load", "Load save"),
+    ("quit", "Quit game"),
+];
 
 impl App {
     pub fn new(channels: UiChannels) -> Self {
@@ -57,53 +43,15 @@ impl App {
             chat: ChatStream::new(),
             input: String::new(),
             should_quit: false,
-            overlay: None,
             channels,
-            deck: vec![
-                CardView {
-                    id: "stump_speech".into(),
-                    name: "Stump Speech".into(),
-                    card_type: "tactic".into(),
-                    category: "campaign".into(),
-                    rarity: "common".into(),
-                    description: "A basic public address.".into(),
-                    play_count: 0,
-                },
-                CardView {
-                    id: "grassroots_support".into(),
-                    name: "Grassroots Support".into(),
-                    card_type: "asset".into(),
-                    category: "organization".into(),
-                    rarity: "common".into(),
-                    description: "Community volunteers backing you.".into(),
-                    play_count: 0,
-                },
-                CardView {
-                    id: "pro_environment".into(),
-                    name: "Pro-Environment".into(),
-                    card_type: "position".into(),
-                    category: "wedge_issue".into(),
-                    rarity: "common".into(),
-                    description: "You stand for environmental protection.".into(),
-                    play_count: 0,
-                },
-                CardView {
-                    id: "transparency".into(),
-                    name: "Transparency".into(),
-                    card_type: "position".into(),
-                    category: "governance".into(),
-                    rarity: "common".into(),
-                    description: "You believe in open government.".into(),
-                    play_count: 0,
-                },
-            ],
-            coherence_label: "Pragmatist".into(),
-            coherence_score: 0,
             week: 1,
             year: 2024,
             phase: "Starting".into(),
             ap_current: 5,
             ap_max: 5,
+            showing_slash_menu: false,
+            slash_filter: String::new(),
+            slash_selected: 0,
         }
     }
 
@@ -112,13 +60,8 @@ impl App {
         terminal: &mut ratatui::DefaultTerminal,
     ) -> Result<(), Box<dyn std::error::Error>> {
         while !self.should_quit {
-            // Drain messages from game thread (non-blocking)
             self.process_game_messages();
-
-            // Render
             self.draw(terminal)?;
-
-            // Handle keyboard input (with short poll so we stay responsive)
             self.handle_input()?;
         }
         Ok(())
@@ -128,7 +71,10 @@ impl App {
         for msg in self.channels.drain_messages() {
             match msg {
                 UiMessage::Narrate(text) => self.chat.add_narration(&text),
-                UiMessage::NpcDialogue { name, text } => self.chat.add_npc(&name, &text),
+                UiMessage::NpcDialogue { name, text } => {
+                    let avatar = get_npc_avatar(&name);
+                    self.chat.add_npc(&name, &text, Some(avatar));
+                }
                 UiMessage::System(text) => self.chat.add_system(&text),
                 UiMessage::Warning(text) => self.chat.add_warning(&text),
                 UiMessage::Success(text) => self.chat.add_success(&text),
@@ -147,9 +93,7 @@ impl App {
                     self.ap_current = ap_current;
                     self.ap_max = ap_max;
                 }
-                UiMessage::Event(_) => {
-                    // Will be used by overlay systems in later phases
-                }
+                UiMessage::Event(_) => {}
                 UiMessage::Shutdown => {
                     self.should_quit = true;
                 }
@@ -161,74 +105,99 @@ impl App {
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Pre-compute values needed by the render closure
-        let status_bar = self.build_status_bar();
-        let chat_height = terminal.size()?.height.saturating_sub(4);
-        let chat_widget = self.chat.render(chat_height);
-        let phase_hint = match self.phase.as_str() {
-            "Action" => {
-                if self.ap_current > 0 {
-                    format!("[AP: {}/{}]", self.ap_current, self.ap_max)
-                } else {
-                    "[AP: 0 — /end to advance]".into()
-                }
-            }
-            "Conversation" => "[Free talk — /leave to end]".into(),
-            "Dawn" => "[Briefing...]".into(),
-            "Dusk" => "[Resolving...]".into(),
-            _ => format!("[{}]", self.phase),
-        };
+        // Pre-compute everything before borrowing chat mutably
+        let status = self.build_status_bar();
         let input_str = self.input.clone();
-        let overlay = self.overlay.clone();
-        let deck = self.deck.clone();
-        let coherence_label = self.coherence_label.clone();
-        let coherence_score = self.coherence_score;
+        let showing_slash = self.showing_slash_menu;
+        let filtered_cmds = self.filtered_commands();
+        let slash_selected = self.slash_selected;
+        let chat_height = terminal.size()?.height.saturating_sub(3);
+        let chat_widget = self.chat.render(chat_height);
 
         terminal.draw(|frame| {
             let area = frame.area();
+
+            // Dark background
+            frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
+
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1),
-                    Constraint::Min(5),
-                    Constraint::Length(3),
+                    Constraint::Length(1), // Status bar
+                    Constraint::Min(3),    // Chat
+                    Constraint::Length(2), // Input
                 ])
                 .split(area);
 
             // Status bar
-            frame.render_widget(status_bar, layout[0]);
+            let status_area = theme::centered_content(layout[0]);
+            frame.render_widget(status, status_area);
 
-            // Chat
-            frame.render_widget(chat_widget, layout[1]);
+            // Chat (centered)
+            let chat_area = theme::centered_content(layout[1]);
+            frame.render_widget(chat_widget, chat_area);
 
             // Input line
-            let input_block = Block::default().borders(Borders::TOP);
-            let input_text = Paragraph::new(Line::from(vec![
-                Span::styled("> ", Style::default().fg(Color::Green)),
-                Span::raw(&input_str),
+            let input_area = theme::centered_content(layout[2]);
+            let input_widget = Paragraph::new(Line::from(vec![
+                Span::styled("> ", Style::default().fg(theme::PLAYER_INPUT)),
+                Span::styled(&input_str, Style::default().fg(theme::FG)),
                 Span::styled(
                     "▊",
                     Style::default()
-                        .fg(Color::White)
+                        .fg(theme::FG)
                         .add_modifier(Modifier::SLOW_BLINK),
                 ),
-                Span::raw("  "),
-                Span::styled(&phase_hint, Style::default().fg(Color::DarkGray)),
             ]))
-            .block(input_block);
-            frame.render_widget(input_text, layout[2]);
+            .style(Style::default().bg(theme::BG));
+            frame.render_widget(input_widget, input_area);
 
-            // Overlay
-            if let Some(ref ov) = overlay {
-                let overlay_area = centered_rect(50, 70, area);
-                render_overlay_static(
-                    frame,
-                    ov,
-                    overlay_area,
-                    &deck,
-                    &coherence_label,
-                    coherence_score,
+            // Slash autocomplete menu
+            if showing_slash && !filtered_cmds.is_empty() {
+                let menu_height = (filtered_cmds.len() as u16 + 2).min(12);
+                let menu_width = 35;
+                let menu_x = input_area.x;
+                let menu_y = input_area.y.saturating_sub(menu_height);
+                let menu_area = Rect::new(menu_x, menu_y, menu_width, menu_height);
+
+                let items: Vec<Line> = filtered_cmds
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (cmd, desc))| {
+                        if i == slash_selected {
+                            Line::from(vec![
+                                Span::styled(
+                                    format!(" /{} ", cmd),
+                                    Style::default()
+                                        .fg(Color::White)
+                                        .bg(theme::BG_HIGHLIGHT)
+                                        .bold(),
+                                ),
+                                Span::styled(
+                                    format!(" {}", desc),
+                                    Style::default().fg(theme::FG_DIM).bg(theme::BG_HIGHLIGHT),
+                                ),
+                            ])
+                        } else {
+                            Line::from(vec![
+                                Span::styled(format!(" /{} ", cmd), Style::default().fg(theme::FG)),
+                                Span::styled(
+                                    format!(" {}", desc),
+                                    Style::default().fg(theme::FG_MUTED),
+                                ),
+                            ])
+                        }
+                    })
+                    .collect();
+
+                let menu = Paragraph::new(items).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme::BORDER))
+                        .style(Style::default().bg(theme::BG_SUBTLE)),
                 );
+                frame.render_widget(Clear, menu_area);
+                frame.render_widget(menu, menu_area);
             }
         })?;
         Ok(())
@@ -237,30 +206,41 @@ impl App {
     fn build_status_bar(&self) -> Paragraph<'static> {
         let filled = "█".repeat(self.ap_current.max(0) as usize);
         let empty = "░".repeat((self.ap_max - self.ap_current).max(0) as usize);
-        let ap_bar = format!("{}{}", filled, empty);
 
         Paragraph::new(Line::from(vec![
             Span::styled(
-                " POLIT ",
-                Style::default().fg(Color::Black).bg(Color::White).bold(),
+                format!("Week {}, {} ", self.week, self.year),
+                Style::default().fg(theme::FG_DIM),
+            ),
+            Span::styled("│ ", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(format!("{} ", self.phase), Style::default().fg(theme::FG)),
+            Span::styled("│ ", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(
+                format!("AP {}{} ", filled, empty),
+                Style::default().fg(theme::FG_DIM),
             ),
             Span::styled(
-                format!(
-                    " │ Week {}, {} │ {} │ AP: {} {}/{} │ ",
-                    self.week, self.year, self.phase, ap_bar, self.ap_current, self.ap_max
-                ),
-                Style::default().fg(Color::White),
+                format!("{}/{}", self.ap_current, self.ap_max),
+                Style::default().fg(theme::FG),
             ),
-            Span::styled("[Tab] Menu", Style::default().fg(Color::DarkGray)),
         ]))
-        .style(Style::default().bg(Color::Rgb(30, 30, 40)))
+        .style(Style::default().bg(theme::BG))
+    }
+
+    fn filtered_commands(&self) -> Vec<(String, String)> {
+        let filter = self.slash_filter.to_lowercase();
+        SLASH_COMMANDS
+            .iter()
+            .filter(|(cmd, _)| filter.is_empty() || cmd.starts_with(&filter))
+            .map(|(cmd, desc)| (cmd.to_string(), desc.to_string()))
+            .collect()
     }
 
     fn handle_input(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(std::time::Duration::from_millis(16))? {
             let evt = event::read()?;
 
-            // Handle mouse scroll (trackpad/scroll wheel)
+            // Mouse scroll
             if let Event::Mouse(mouse) = evt {
                 match mouse.kind {
                     crossterm::event::MouseEventKind::ScrollUp => {
@@ -279,22 +259,58 @@ impl App {
                     return Ok(());
                 }
 
+                // Slash menu navigation
+                if self.showing_slash_menu {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.showing_slash_menu = false;
+                            self.input.clear();
+                        }
+                        KeyCode::Up => {
+                            if self.slash_selected > 0 {
+                                self.slash_selected -= 1;
+                            }
+                        }
+                        KeyCode::Down => {
+                            let max = self.filtered_commands().len().saturating_sub(1);
+                            if self.slash_selected < max {
+                                self.slash_selected += 1;
+                            }
+                        }
+                        KeyCode::Enter | KeyCode::Tab => {
+                            let cmds = self.filtered_commands();
+                            if let Some((cmd, _)) = cmds.get(self.slash_selected) {
+                                self.input = format!("/{} ", cmd);
+                            }
+                            self.showing_slash_menu = false;
+                        }
+                        KeyCode::Backspace => {
+                            self.input.pop();
+                            if !self.input.starts_with('/') {
+                                self.showing_slash_menu = false;
+                            } else {
+                                self.slash_filter = self.input[1..].to_string();
+                                self.slash_selected = 0;
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            self.input.push(c);
+                            self.slash_filter = self.input[1..].to_string();
+                            self.slash_selected = 0;
+                        }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                         self.channels.send(UiCommand::Quit);
                         self.should_quit = true;
                     }
-                    KeyCode::Esc => {
-                        if self.overlay.is_some() {
-                            self.overlay = None;
-                        }
-                    }
-                    KeyCode::Tab => {
-                        self.overlay = if self.overlay.is_some() {
-                            None
-                        } else {
-                            Some(Overlay::CommandPalette)
-                        };
+                    // Shift+R = return to bottom
+                    KeyCode::Char('R') => {
+                        self.chat.scroll_to_bottom();
                     }
                     KeyCode::Enter => {
                         if !self.input.is_empty() {
@@ -303,16 +319,17 @@ impl App {
                             self.process_input(&input);
                         }
                     }
-                    // Shift+R = return to current (bottom of chat)
-                    KeyCode::Char('R') => {
-                        self.chat.scroll_to_bottom();
-                    }
                     KeyCode::Backspace => {
                         self.input.pop();
                     }
+                    KeyCode::Char('/') if self.input.is_empty() => {
+                        self.input.push('/');
+                        self.showing_slash_menu = true;
+                        self.slash_filter.clear();
+                        self.slash_selected = 0;
+                    }
                     KeyCode::Char(c) => {
                         self.input.push(c);
-                        // Resume auto-scroll when user types
                         self.chat.scroll_to_bottom();
                     }
                     _ => {}
@@ -332,53 +349,21 @@ impl App {
                 vec![]
             };
 
-            // Handle UI-only commands locally
             match cmd.as_str() {
-                "help" => {
-                    self.overlay = Some(Overlay::Help);
-                    return;
-                }
-                "cards" => {
-                    self.overlay = Some(Overlay::Deck);
-                    return;
-                }
-                "map" => {
-                    self.overlay = Some(Overlay::Map);
-                    return;
-                }
-                "news" => {
-                    self.overlay = Some(Overlay::News);
-                    return;
-                }
-                "stats" => {
-                    self.overlay = Some(Overlay::Economy);
-                    return;
-                }
-                "staff" => {
-                    self.overlay = Some(Overlay::Staff);
-                    return;
-                }
-                "intel" => {
-                    self.overlay = Some(Overlay::Intel);
-                    return;
-                }
                 "quit" => {
                     self.channels.send(UiCommand::Quit);
                     self.should_quit = true;
-                    return;
                 }
                 "end" => {
                     self.channels.send(UiCommand::EndTurn);
-                    return;
                 }
                 "save" => {
                     let name = if args.is_empty() {
-                        format!("manual_w{}_y{}", self.week, self.year)
+                        format!("save_w{}_y{}", self.week, self.year)
                     } else {
                         args.join("_")
                     };
                     self.channels.send(UiCommand::SaveGame(name));
-                    return;
                 }
                 "load" => {
                     if args.is_empty() {
@@ -386,245 +371,53 @@ impl App {
                     } else {
                         self.channels.send(UiCommand::LoadGame(args.join(" ")));
                     }
-                    return;
                 }
                 _ => {
-                    // Send to game thread for handling
                     self.channels.send(UiCommand::SlashCommand { cmd, args });
                 }
             }
         } else {
-            // Free text → game thread
             self.channels
                 .send(UiCommand::PlayerInput(input.to_string()));
         }
     }
 }
 
-fn render_overlay_static(
-    frame: &mut Frame,
-    overlay: &Overlay,
-    area: Rect,
-    deck: &[CardView],
-    coherence_label: &str,
-    coherence_score: i32,
-) {
-    match overlay {
-        Overlay::Deck => {
-            render_deck_static(frame, area, deck, coherence_label, coherence_score);
-            return;
-        }
-        _ => {}
+/// Get NPC avatar based on name
+fn get_npc_avatar(name: &str) -> NpcAvatar {
+    let lower = name.to_lowercase();
+    let (face, color) = if lower.contains("davis") {
+        ("°°", Color::Cyan)
+    } else if lower.contains("kowalski") {
+        ("──", Color::Yellow)
+    } else if lower.contains("martinez") {
+        ("^^", Color::Green)
+    } else if lower.contains("chen") {
+        ("¬¬", Color::Red)
+    } else if lower.contains("kim") {
+        ("••", Color::Magenta)
+    } else {
+        // Generate from name hash
+        let faces = ["••", "°°", "^^", "──", "¬¬", "◦◦", "∘∘", "··"];
+        let colors = [
+            Color::Cyan,
+            Color::Yellow,
+            Color::Green,
+            Color::Red,
+            Color::Magenta,
+            Color::LightBlue,
+            Color::LightGreen,
+            Color::LightRed,
+        ];
+        let hash = name
+            .bytes()
+            .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
+        (faces[hash % faces.len()], colors[hash % colors.len()])
+    };
+
+    NpcAvatar {
+        face: face.to_string(),
+        color,
+        name: name.to_string(),
     }
-
-    let (title, items): (&str, Vec<&str>) = match overlay {
-        Overlay::CommandPalette => (
-            "≡ COMMAND PALETTE",
-            vec![
-                "",
-                "  /meet <npc>      Meet with an NPC (2 AP)",
-                "  /call <npc>      Phone call (1 AP)",
-                "  /speech <topic>  Give a speech (1 AP)",
-                "  /campaign        Campaign in district (2 AP)",
-                "  /draft           Draft legislation",
-                "  /end             End turn",
-                "",
-                "  /cards           View your deck",
-                "  /map             View map",
-                "  /news            News archive",
-                "  /stats           Economic dashboard",
-                "  /staff           Staff management",
-                "  /intel           Intelligence briefing",
-                "",
-                "  /save [name]     Save game",
-                "  /load <name>     Load game",
-                "  /help            Full help",
-                "  /quit            Quit game",
-                "",
-                "  [Esc] Close   [Tab] Toggle",
-            ],
-        ),
-        Overlay::Help => (
-            "HELP",
-            vec![
-                "",
-                "  POLIT — The American Politics Simulator",
-                "",
-                "  You are a politician. Each week you get Action Points",
-                "  to spend on meetings, speeches, legislation, and more.",
-                "",
-                "  Type freely to speak or act.",
-                "  Use /commands for specific actions.",
-                "  Press Tab for the command palette.",
-                "",
-                "  Scrolling: PgUp/PgDn or ↑↓ (when input empty)",
-                "  Home = scroll to top, End = back to bottom",
-                "",
-                "  [Esc] Close",
-            ],
-        ),
-        Overlay::Map => (
-            "🗺  MAP",
-            vec![
-                "",
-                "       ┌───────────────────────┐",
-                "       │    SPRINGFIELD         │",
-                "       │                        │",
-                "       │   [D1]  [D2]  [D3]    │",
-                "       │   Urban Suburb Rural   │",
-                "       │                        │",
-                "       │   [D4]  [D5]           │",
-                "       │   College Industrial   │",
-                "       └───────────────────────┘",
-                "",
-                "  You represent District 1 (Urban)",
-                "",
-                "  [Esc] Close",
-            ],
-        ),
-        _ => {
-            let name = format!("{:?}", overlay);
-            (
-                Box::leak(name.into_boxed_str()),
-                vec!["", "  (Coming soon)", "", "  [Esc] Close"],
-            )
-        }
-    };
-
-    let text: Vec<Line> = items.iter().map(|s| Line::from(*s)).collect();
-    let block = Block::default()
-        .title(format!(" {} ", title))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Rgb(15, 15, 25)));
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(text).block(block), area);
-}
-
-fn render_deck_static(
-    frame: &mut Frame,
-    area: Rect,
-    deck: &[CardView],
-    coherence_label: &str,
-    coherence_score: i32,
-) {
-    let mut lines: Vec<Line> = vec![Line::from("")];
-
-    lines.push(Line::from(vec![
-        Span::styled(
-            format!("  {} cards in deck", deck.len()),
-            Style::default().fg(Color::White),
-        ),
-        Span::raw("  │  "),
-        Span::styled(
-            format!("Coherence: {} ({})", coherence_label, coherence_score),
-            Style::default().fg(match coherence_label {
-                "Principled" => Color::Green,
-                "Flip-Flopper" => Color::Red,
-                _ => Color::Yellow,
-            }),
-        ),
-    ]));
-    lines.push(Line::from(""));
-
-    let tactics: Vec<_> = deck.iter().filter(|c| c.card_type == "tactic").collect();
-    let assets: Vec<_> = deck.iter().filter(|c| c.card_type == "asset").collect();
-    let positions: Vec<_> = deck.iter().filter(|c| c.card_type == "position").collect();
-
-    for (label, color, tag, cards) in [
-        ("── TACTICS ──", Color::Cyan, "T", &tactics),
-        ("── ASSETS ──", Color::Yellow, "A", &assets),
-        ("── POSITIONS ──", Color::Magenta, "P", &positions),
-    ] {
-        if !cards.is_empty() {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", label),
-                Style::default().fg(color).bold(),
-            )));
-            for card in cards {
-                lines.push(render_card_line(card, tag));
-            }
-            lines.push(Line::from(""));
-        }
-    }
-
-    if deck.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  Your deck is empty.",
-            Style::default().fg(Color::DarkGray),
-        )));
-        lines.push(Line::from(""));
-    }
-
-    lines.push(Line::from(Span::styled(
-        "  [Esc] Close",
-        Style::default().fg(Color::DarkGray),
-    )));
-
-    let block = Block::default()
-        .title(" 🃏 CARDS & DECK ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Rgb(15, 15, 25)));
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-fn render_card_line<'a>(card: &'a CardView, type_tag: &'a str) -> Line<'a> {
-    let tag_color = match type_tag {
-        "T" => Color::Cyan,
-        "A" => Color::Yellow,
-        "P" => Color::Magenta,
-        _ => Color::White,
-    };
-
-    let rarity_indicator = match card.rarity.as_str() {
-        "common" => "  ",
-        "uncommon" => "★ ",
-        "rare" => "★★",
-        "legendary" => "★★★",
-        _ => "  ",
-    };
-
-    let rarity_color = match card.rarity.as_str() {
-        "common" => Color::DarkGray,
-        "uncommon" => Color::Green,
-        "rare" => Color::Rgb(100, 149, 237), // cornflower blue
-        "legendary" => Color::Rgb(255, 215, 0), // gold
-        _ => Color::DarkGray,
-    };
-
-    Line::from(vec![
-        Span::styled(format!("  [{}] ", type_tag), Style::default().fg(tag_color)),
-        Span::styled(&card.name, Style::default().fg(Color::White).bold()),
-        Span::raw("  "),
-        Span::styled(rarity_indicator, Style::default().fg(rarity_color)),
-        Span::raw("  "),
-        Span::styled(
-            &card.description,
-            Style::default().fg(Color::Rgb(120, 120, 140)),
-        ),
-    ])
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }

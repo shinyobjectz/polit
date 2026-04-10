@@ -1,35 +1,43 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Paragraph, Wrap},
 };
+
+use super::theme;
 
 /// A single message in the chat stream
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
     pub style: MessageStyle,
     pub text: String,
+    /// Optional NPC avatar (face chars + color)
+    pub avatar: Option<NpcAvatar>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NpcAvatar {
+    pub face: String, // e.g., "°°", "──", "^^"
+    pub color: Color,
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum MessageStyle {
-    Narration,   // White
-    NpcDialogue, // Cyan
-    PlayerInput, // Green
-    SystemEvent, // Yellow
-    Warning,     // Red
-    Success,     // Green
-    DiceRoll,    // Magenta
-    PhaseHeader, // Bold white with separators
+    Narration,
+    NpcDialogue,
+    PlayerInput,
+    SystemEvent,
+    Warning,
+    Success,
+    DiceRoll,
+    PhaseHeader,
 }
 
-/// Scrollable chat stream with manual scroll support
+/// Scrollable chat stream
 pub struct ChatStream {
     pub messages: Vec<ChatMessage>,
-    /// Manual scroll offset from bottom (0 = at bottom)
     pub scroll_up: u16,
-    /// Whether user has manually scrolled (disables auto-scroll)
     pub user_scrolled: bool,
-    /// Total rendered lines (for scroll bounds)
     total_lines: u16,
 }
 
@@ -47,8 +55,8 @@ impl ChatStream {
         self.messages.push(ChatMessage {
             style,
             text: text.to_string(),
+            avatar: None,
         });
-        // Auto-scroll to bottom on new content (unless user scrolled up)
         if !self.user_scrolled {
             self.scroll_up = 0;
         }
@@ -58,11 +66,21 @@ impl ChatStream {
         self.add_message(MessageStyle::Narration, text);
     }
 
-    pub fn add_npc(&mut self, name: &str, text: &str) {
-        self.add_message(
-            MessageStyle::NpcDialogue,
-            &format!("■ {}\n{}", name.to_uppercase(), text),
-        );
+    pub fn add_npc(&mut self, name: &str, text: &str, avatar: Option<NpcAvatar>) {
+        self.messages.push(ChatMessage {
+            style: MessageStyle::NpcDialogue,
+            text: text.to_string(),
+            avatar: avatar.or_else(|| {
+                Some(NpcAvatar {
+                    face: "••".to_string(),
+                    color: Color::Cyan,
+                    name: name.to_string(),
+                })
+            }),
+        });
+        if !self.user_scrolled {
+            self.scroll_up = 0;
+        }
     }
 
     pub fn add_player(&mut self, text: &str) {
@@ -86,30 +104,23 @@ impl ChatStream {
     }
 
     pub fn add_phase_header(&mut self, text: &str) {
-        self.add_message(
-            MessageStyle::PhaseHeader,
-            &format!("┄┄┄┄┄┄┄┄┄┄┄┄ {} ┄┄┄┄┄┄┄┄┄┄┄┄", text),
-        );
+        self.add_message(MessageStyle::PhaseHeader, text);
     }
 
-    /// Scroll up by N lines
     pub fn scroll_up_by(&mut self, lines: u16) {
-        // No cap — scroll as far back as content exists
         self.scroll_up = (self.scroll_up + lines).min(self.total_lines);
         self.user_scrolled = true;
     }
 
-    /// Scroll down by N lines
     pub fn scroll_down_by(&mut self, lines: u16) {
         if self.scroll_up <= lines {
             self.scroll_up = 0;
-            self.user_scrolled = false; // Back at bottom = resume auto-scroll
+            self.user_scrolled = false;
         } else {
             self.scroll_up -= lines;
         }
     }
 
-    /// Jump to bottom
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_up = 0;
         self.user_scrolled = false;
@@ -120,31 +131,57 @@ impl ChatStream {
             .messages
             .iter()
             .flat_map(|msg| {
+                let mut result = Vec::new();
+
+                // NPC avatar + name header
+                if let Some(ref avatar) = msg.avatar {
+                    result.push(Line::from(vec![
+                        Span::styled(
+                            format!("{} ", avatar.face),
+                            Style::default().fg(avatar.color),
+                        ),
+                        Span::styled(
+                            avatar.name.to_uppercase(),
+                            Style::default().fg(avatar.color).bold(),
+                        ),
+                    ]));
+                }
+
                 let style = match msg.style {
-                    MessageStyle::Narration => Style::default().fg(Color::White),
-                    MessageStyle::NpcDialogue => Style::default().fg(Color::Cyan),
-                    MessageStyle::PlayerInput => Style::default().fg(Color::Green),
-                    MessageStyle::SystemEvent => Style::default().fg(Color::Yellow),
-                    MessageStyle::Warning => Style::default().fg(Color::Red),
-                    MessageStyle::Success => Style::default().fg(Color::Green),
-                    MessageStyle::DiceRoll => Style::default().fg(Color::Magenta),
-                    MessageStyle::PhaseHeader => Style::default().fg(Color::White).bold(),
+                    MessageStyle::Narration => Style::default().fg(theme::NARRATION),
+                    MessageStyle::NpcDialogue => Style::default().fg(theme::NPC_DIALOGUE),
+                    MessageStyle::PlayerInput => Style::default().fg(theme::PLAYER_INPUT),
+                    MessageStyle::SystemEvent => Style::default().fg(theme::FG_DIM),
+                    MessageStyle::Warning => Style::default().fg(theme::WARNING),
+                    MessageStyle::Success => Style::default().fg(theme::SUCCESS),
+                    MessageStyle::DiceRoll => Style::default().fg(theme::DICE),
+                    MessageStyle::PhaseHeader => Style::default().fg(theme::PHASE_HEADER),
                 };
 
-                msg.text
-                    .lines()
-                    .map(move |line| Line::from(Span::styled(line.to_string(), style)))
-                    .chain(std::iter::once(Line::from("")))
-                    .collect::<Vec<_>>()
+                // Phase headers get a subtle separator
+                if matches!(msg.style, MessageStyle::PhaseHeader) {
+                    result.push(Line::from(""));
+                    result.push(Line::from(Span::styled(
+                        format!("  ─── {} ───", msg.text),
+                        style,
+                    )));
+                    result.push(Line::from(""));
+                } else {
+                    for line in msg.text.lines() {
+                        result.push(Line::from(Span::styled(line.to_string(), style)));
+                    }
+                    result.push(Line::from(""));
+                }
+
+                result
             })
             .collect();
 
         self.total_lines = lines.len() as u16;
 
-        let block = Block::default().borders(Borders::NONE);
+        let block = Block::default().style(Style::default().bg(theme::BG));
 
-        // Calculate scroll position: bottom minus user offset
-        let visible = viewport_height.saturating_sub(2);
+        let visible = viewport_height.saturating_sub(1);
         let max_scroll = self.total_lines.saturating_sub(visible);
         let scroll = max_scroll.saturating_sub(self.scroll_up);
 

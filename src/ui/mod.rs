@@ -1,5 +1,6 @@
 pub mod app;
 pub mod chat;
+pub mod theme;
 pub mod title;
 
 use crate::engine::channels::Channels;
