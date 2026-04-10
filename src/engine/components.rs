@@ -73,9 +73,9 @@ pub struct Ideology {
     /// Each axis: 0.0 (left/progressive) to 1.0 (right/conservative)
     pub economic: f32,
     pub social: f32,
-    pub foreign_policy: f32,    // 0.0 = dove, 1.0 = hawk
-    pub governance: f32,        // 0.0 = big gov, 1.0 = small gov
-    pub environment: f32,       // 0.0 = green, 1.0 = industry
+    pub foreign_policy: f32, // 0.0 = dove, 1.0 = hawk
+    pub governance: f32,     // 0.0 = big gov, 1.0 = small gov
+    pub environment: f32,    // 0.0 = green, 1.0 = industry
 }
 
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
@@ -93,8 +93,8 @@ pub struct Stats {
 
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct Health {
-    pub stress: i32,        // 0-100
-    pub physical: i32,      // 0-100
+    pub stress: i32,   // 0-100
+    pub physical: i32, // 0-100
     pub burnout: bool,
 }
 
@@ -171,13 +171,32 @@ pub enum Rarity {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CardEffect {
-    ModifyStat { stat: String, delta: i32 },
-    ModifyRoll { skill: String, bonus: i32 },
-    ModifyRelationship { target: String, field: String, delta: i32 },
-    ModifyEconomic { variable: String, delta: f64 },
-    GrantCard { card_id: String },
-    TriggerEvent { event_id: String },
-    Custom { rhai_script: String },
+    ModifyStat {
+        stat: String,
+        delta: i32,
+    },
+    ModifyRoll {
+        skill: String,
+        bonus: i32,
+    },
+    ModifyRelationship {
+        target: String,
+        field: String,
+        delta: i32,
+    },
+    ModifyEconomic {
+        variable: String,
+        delta: f64,
+    },
+    GrantCard {
+        card_id: String,
+    },
+    TriggerEvent {
+        event_id: String,
+    },
+    Custom {
+        rhai_script: String,
+    },
 }
 
 // ===== LAW COMPONENTS =====
@@ -233,12 +252,12 @@ pub struct Information {
     pub info_type: InfoType,
     pub topic: String,
     pub about: String,
-    pub truth_value: f32,       // 0.0-1.0
-    pub severity: u8,           // 1-10
-    pub newsworthiness: u8,     // 1-10
+    pub truth_value: f32,   // 0.0-1.0
+    pub severity: u8,       // 1-10
+    pub newsworthiness: u8, // 1-10
     pub evidence_level: EvidenceLevel,
     pub public: bool,
-    pub public_belief: f32,     // 0.0-1.0
+    pub public_belief: f32, // 0.0-1.0
     pub created_week: u32,
     pub published_week: Option<u32>,
     pub status: InfoStatus,
@@ -291,13 +310,13 @@ pub struct EconomicState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relationship {
-    pub trust: i32,         // -100 to 100
-    pub respect: i32,       // -100 to 100
-    pub fear: i32,          // 0 to 100
-    pub loyalty: i32,       // 0 to 100
-    pub debt: i32,          // -10 to 10
-    pub knowledge: i32,     // 0 to 100
-    pub leverage: i32,      // 0 to 100
+    pub trust: i32,     // -100 to 100
+    pub respect: i32,   // -100 to 100
+    pub fear: i32,      // 0 to 100
+    pub loyalty: i32,   // 0 to 100
+    pub debt: i32,      // -10 to 10
+    pub knowledge: i32, // 0 to 100
+    pub leverage: i32,  // 0 to 100
     pub rel_type: RelationshipType,
     pub memories: Vec<Memory>,
 }

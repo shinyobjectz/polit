@@ -1,12 +1,12 @@
-pub mod world;
-pub mod game_loop;
-pub mod game_thread;
-pub mod components;
-pub mod events;
 pub mod channels;
+pub mod components;
 pub mod config;
 pub mod demo;
+pub mod events;
+pub mod game_loop;
+pub mod game_thread;
 pub mod paths;
+pub mod world;
 
 use bevy_ecs::prelude::*;
 
@@ -56,7 +56,10 @@ impl GameState {
         let mut world = World::new();
         let schedule = Schedule::default();
 
-        world.insert_resource(GameClock { week: 1, year: 2024 });
+        world.insert_resource(GameClock {
+            week: 1,
+            year: 2024,
+        });
 
         Ok(Self {
             world,

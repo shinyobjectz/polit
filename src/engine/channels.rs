@@ -1,4 +1,4 @@
-use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 
 use super::events::GameEvent;
 
@@ -64,7 +64,12 @@ impl Channels {
     pub fn new() -> Self {
         let (cmd_tx, cmd_rx) = bounded(64);
         let (msg_tx, msg_rx) = unbounded();
-        Self { cmd_tx, cmd_rx, msg_tx, msg_rx }
+        Self {
+            cmd_tx,
+            cmd_rx,
+            msg_tx,
+            msg_rx,
+        }
     }
 
     /// Split into UI-side and Game-side handles

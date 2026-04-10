@@ -49,12 +49,18 @@ impl GamePaths {
     fn seed_defaults(&self) -> Result<(), Box<dyn std::error::Error>> {
         let balance_path = self.config.join("balance.toml");
         if !balance_path.exists() {
-            std::fs::write(&balance_path, include_str!("../../game/config/balance.toml"))?;
+            std::fs::write(
+                &balance_path,
+                include_str!("../../game/config/balance.toml"),
+            )?;
         }
 
         let difficulty_path = self.config.join("difficulty.toml");
         if !difficulty_path.exists() {
-            std::fs::write(&difficulty_path, include_str!("../../game/config/difficulty.toml"))?;
+            std::fs::write(
+                &difficulty_path,
+                include_str!("../../game/config/difficulty.toml"),
+            )?;
         }
 
         let theme_path = self.config.join("theme.toml");

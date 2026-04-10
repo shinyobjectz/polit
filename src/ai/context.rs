@@ -103,9 +103,12 @@ impl GameContext {
              AP: {}/{}\n\
              Phase: {}\n\
              Economy: {}",
-            self.week, self.year,
-            self.player_name, self.player_office,
-            self.ap_current, self.ap_max,
+            self.week,
+            self.year,
+            self.player_name,
+            self.player_office,
+            self.ap_current,
+            self.ap_max,
             self.phase,
             self.economic_summary,
         );
@@ -194,6 +197,10 @@ mod tests {
         // Ensure default prompt stays under ~2000 chars (roughly <500 tokens)
         let ctx = GameContext::default();
         let prompt = ctx.build_prompt("test input", DmMode::Narrator);
-        assert!(prompt.len() < 3000, "Prompt too long: {} chars", prompt.len());
+        assert!(
+            prompt.len() < 3000,
+            "Prompt too long: {} chars",
+            prompt.len()
+        );
     }
 }

@@ -102,15 +102,22 @@ impl GameConfig {
         // Load difficulty (default to standard)
         let diff_str = std::fs::read_to_string(config_path.join("difficulty.toml"))?;
         let diff_table: HashMap<String, DifficultyMode> = toml::from_str(&diff_str)?;
-        let difficulty = diff_table.get("standard")
+        let difficulty = diff_table
+            .get("standard")
             .cloned()
             .ok_or("Missing 'standard' difficulty mode")?;
 
-        Ok(Self { balance, difficulty })
+        Ok(Self {
+            balance,
+            difficulty,
+        })
     }
 
     /// Load with a specific difficulty mode
-    pub fn load_with_difficulty(config_dir: &str, mode: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_with_difficulty(
+        config_dir: &str,
+        mode: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = Path::new(config_dir);
 
         let balance_str = std::fs::read_to_string(config_path.join("balance.toml"))?;
@@ -118,11 +125,17 @@ impl GameConfig {
 
         let diff_str = std::fs::read_to_string(config_path.join("difficulty.toml"))?;
         let diff_table: HashMap<String, DifficultyMode> = toml::from_str(&diff_str)?;
-        let difficulty = diff_table.get(mode)
-            .cloned()
-            .ok_or_else(|| format!("Unknown difficulty mode: '{}'. Options: story, standard, ironman, nightmare", mode))?;
+        let difficulty = diff_table.get(mode).cloned().ok_or_else(|| {
+            format!(
+                "Unknown difficulty mode: '{}'. Options: story, standard, ironman, nightmare",
+                mode
+            )
+        })?;
 
-        Ok(Self { balance, difficulty })
+        Ok(Self {
+            balance,
+            difficulty,
+        })
     }
 }
 

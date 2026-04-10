@@ -4,15 +4,19 @@ pub mod title;
 
 use crate::engine::channels::Channels;
 use crate::engine::paths::GamePaths;
-use crate::engine::{demo, game_thread};
 use crate::engine::GameState;
+use crate::engine::{demo, game_thread};
 
-use title::{TitleScreen, TitleAction};
+use title::{TitleAction, TitleScreen};
 
 /// Launch the full game with title screen
 pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;
-    let has_save = paths.saves.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+    let has_save = paths
+        .saves
+        .read_dir()
+        .map(|mut d| d.next().is_some())
+        .unwrap_or(false);
 
     let mut terminal = ratatui::init();
 

@@ -29,7 +29,13 @@ pub fn skill_check(skill: &str, modifier: i32, dc: u32) -> RollResult {
         total,
         dc,
         // Nat 20 always succeeds, nat 1 always fails
-        success: if critical_success { true } else if critical_failure { false } else { success },
+        success: if critical_success {
+            true
+        } else if critical_failure {
+            false
+        } else {
+            success
+        },
         critical_success,
         critical_failure,
         skill: skill.to_string(),
@@ -111,7 +117,10 @@ mod tests {
             assert!(
                 deviation < 0.15,
                 "Roll {} appeared {} times, expected ~{}, deviation {:.2}%",
-                i + 1, count, expected, deviation * 100.0
+                i + 1,
+                count,
+                expected,
+                deviation * 100.0
             );
         }
     }

@@ -1,7 +1,7 @@
-pub mod tools;
 pub mod context;
-pub mod provider;
 pub mod mock;
+pub mod provider;
+pub mod tools;
 
 use tools::DmResponse;
 
@@ -20,7 +20,11 @@ pub enum DmMode {
 
 /// Trait for AI providers (real model or mock)
 pub trait AiProvider: Send {
-    fn generate(&mut self, prompt: &str, mode: DmMode) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>>;
+    fn generate(
+        &mut self,
+        prompt: &str,
+        mode: DmMode,
+    ) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>>;
     fn name(&self) -> &str;
 }
 

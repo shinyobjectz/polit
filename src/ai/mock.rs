@@ -20,7 +20,11 @@ impl AiProvider for MockProvider {
         "mock-dm"
     }
 
-    fn generate(&mut self, prompt: &str, mode: DmMode) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
+    fn generate(
+        &mut self,
+        prompt: &str,
+        mode: DmMode,
+    ) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
         self.call_count += 1;
         let mut rng = rand::thread_rng();
 
@@ -69,7 +73,10 @@ fn generate_conversation(rng: &mut impl Rng, prompt: &str) -> DmResponse {
     let input_lower = prompt.to_lowercase();
     let mut tool_calls = vec![];
 
-    let narration = if input_lower.contains("deal") || input_lower.contains("offer") || input_lower.contains("support") {
+    let narration = if input_lower.contains("deal")
+        || input_lower.contains("offer")
+        || input_lower.contains("support")
+    {
         tool_calls.push(ToolCall::ModifyRel {
             npc: "current_npc".into(),
             field: "trust".into(),
@@ -77,7 +84,10 @@ fn generate_conversation(rng: &mut impl Rng, prompt: &str) -> DmResponse {
         });
         "They lean forward, considering your proposal. \"That's... interesting. I'd need to see the details, \
          but I'm not opposed in principle. What exactly would you need from me?\""
-    } else if input_lower.contains("threaten") || input_lower.contains("pressure") || input_lower.contains("demand") {
+    } else if input_lower.contains("threaten")
+        || input_lower.contains("pressure")
+        || input_lower.contains("demand")
+    {
         tool_calls.push(ToolCall::ModifyRel {
             npc: "current_npc".into(),
             field: "fear".into(),
@@ -94,7 +104,10 @@ fn generate_conversation(rng: &mut impl Rng, prompt: &str) -> DmResponse {
         });
         "Their expression hardens. \"I'd choose my next words very carefully if I were you. \
          People in this town have long memories.\""
-    } else if input_lower.contains("help") || input_lower.contains("favor") || input_lower.contains("ask") {
+    } else if input_lower.contains("help")
+        || input_lower.contains("favor")
+        || input_lower.contains("ask")
+    {
         tool_calls.push(ToolCall::RollDice {
             skill: "Persuasion".into(),
             dc: 12,
@@ -186,7 +199,12 @@ mod tests {
     fn test_mock_generates_responses() {
         let mut provider = MockProvider::new();
 
-        for mode in [DmMode::Narrator, DmMode::Conversation, DmMode::DungeonMaster, DmMode::LawInterpreter] {
+        for mode in [
+            DmMode::Narrator,
+            DmMode::Conversation,
+            DmMode::DungeonMaster,
+            DmMode::LawInterpreter,
+        ] {
             let response = provider.generate("test input", mode).unwrap();
             assert!(!response.narration.is_empty());
         }
@@ -195,7 +213,9 @@ mod tests {
     #[test]
     fn test_conversation_reacts_to_threats() {
         let mut provider = MockProvider::new();
-        let response = provider.generate("I will threaten you", DmMode::Conversation).unwrap();
+        let response = provider
+            .generate("I will threaten you", DmMode::Conversation)
+            .unwrap();
         assert!(response.narration.contains("carefully"));
         // Should have fear + trust modifiers
         assert!(response.tool_calls.len() >= 2);
@@ -204,8 +224,12 @@ mod tests {
     #[test]
     fn test_conversation_reacts_to_deals() {
         let mut provider = MockProvider::new();
-        let response = provider.generate("Let's make a deal", DmMode::Conversation).unwrap();
-        assert!(response.narration.contains("proposal") || response.narration.contains("interesting"));
+        let response = provider
+            .generate("Let's make a deal", DmMode::Conversation)
+            .unwrap();
+        assert!(
+            response.narration.contains("proposal") || response.narration.contains("interesting")
+        );
     }
 
     #[test]

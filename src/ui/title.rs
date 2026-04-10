@@ -1,6 +1,6 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph, Clear};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 /// Title screen menu options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +38,10 @@ impl TitleScreen {
         }
     }
 
-    pub fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<TitleAction, Box<dyn std::error::Error>> {
+    pub fn run(
+        &mut self,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<TitleAction, Box<dyn std::error::Error>> {
         loop {
             self.frame_count += 1;
             terminal.draw(|frame| self.render(frame))?;
@@ -65,7 +68,9 @@ impl TitleScreen {
                         KeyCode::Char('q') | KeyCode::Esc => {
                             return Ok(TitleAction::Quit);
                         }
-                        KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('c')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             return Ok(TitleAction::Quit);
                         }
                         _ => {}
@@ -87,22 +92,28 @@ impl TitleScreen {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(2),      // top margin
-                Constraint::Length(12),     // flag + title
+                Constraint::Percentage(25), // top margin
+                Constraint::Length(3),      // title
                 Constraint::Length(2),      // subtitle
                 Constraint::Length(1),      // spacer
-                Constraint::Min(8),        // menu
+                Constraint::Min(8),         // menu
                 Constraint::Length(2),      // footer
             ])
             .split(area);
 
-        // Flag + Title
-        self.render_flag_and_title(frame, layout[1]);
+        // Title: flag emoji + POLIT
+        let title = Paragraph::new(Line::from(vec![
+            Span::styled("🇺🇸 ", Style::default()),
+            Span::styled("P O L I T", Style::default().fg(Color::White).bold()),
+        ]))
+        .alignment(Alignment::Center);
+        frame.render_widget(title, layout[1]);
 
         // Subtitle
-        let subtitle = Paragraph::new(Line::from(vec![
-            Span::styled("The American Politics Simulator", Style::default().fg(Color::Rgb(180, 180, 200))),
-        ]))
+        let subtitle = Paragraph::new(Line::from(vec![Span::styled(
+            "The American Politics Simulator",
+            Style::default().fg(Color::Rgb(140, 140, 160)),
+        )]))
         .alignment(Alignment::Center);
         frame.render_widget(subtitle, layout[2]);
 
@@ -119,106 +130,34 @@ impl TitleScreen {
         frame.render_widget(footer, layout[5]);
     }
 
-    fn render_flag_and_title(&self, frame: &mut Frame, area: Rect) {
-        // ASCII American flag with POLIT title next to it
-        let flag_and_title = vec![
-            Line::from(vec![
-                Span::styled("  ★ ★ ★ ★ ★ ★", Style::default().fg(Color::White).bg(Color::Rgb(0, 40, 104))),
-                Span::styled("═══════════════════", Style::default().fg(Color::Rgb(191, 10, 48))),
-                Span::raw("    "),
-                Span::styled("██████╗  ", Style::default().fg(Color::White).bold()),
-                Span::styled("██████╗ ", Style::default().fg(Color::White).bold()),
-                Span::styled("██╗     ", Style::default().fg(Color::White).bold()),
-                Span::styled("██╗", Style::default().fg(Color::White).bold()),
-                Span::styled("████████╗", Style::default().fg(Color::White).bold()),
-            ]),
-            Line::from(vec![
-                Span::styled("   ★ ★ ★ ★ ★ ", Style::default().fg(Color::White).bg(Color::Rgb(0, 40, 104))),
-                Span::styled("═══════════════════", Style::default().fg(Color::White)),
-                Span::raw("    "),
-                Span::styled("██╔══██╗ ", Style::default().fg(Color::White).bold()),
-                Span::styled("██╔══██╗", Style::default().fg(Color::White).bold()),
-                Span::styled("██║     ", Style::default().fg(Color::White).bold()),
-                Span::styled("██║", Style::default().fg(Color::White).bold()),
-                Span::styled("╚══██╔══╝", Style::default().fg(Color::White).bold()),
-            ]),
-            Line::from(vec![
-                Span::styled("  ★ ★ ★ ★ ★ ★", Style::default().fg(Color::White).bg(Color::Rgb(0, 40, 104))),
-                Span::styled("═══════════════════", Style::default().fg(Color::Rgb(191, 10, 48))),
-                Span::raw("    "),
-                Span::styled("██████╔╝ ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("██║  ██║", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("██║     ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("██║", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("   ██║   ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-            ]),
-            Line::from(vec![
-                Span::styled("   ★ ★ ★ ★ ★ ", Style::default().fg(Color::White).bg(Color::Rgb(0, 40, 104))),
-                Span::styled("═══════════════════", Style::default().fg(Color::White)),
-                Span::raw("    "),
-                Span::styled("██╔═══╝  ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("██║  ██║", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("██║     ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("██║", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                Span::styled("   ██║   ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-            ]),
-            Line::from(vec![
-                Span::styled("  ★ ★ ★ ★ ★ ★", Style::default().fg(Color::White).bg(Color::Rgb(0, 40, 104))),
-                Span::styled("═══════════════════", Style::default().fg(Color::Rgb(191, 10, 48))),
-                Span::raw("    "),
-                Span::styled("██║      ", Style::default().fg(Color::Rgb(0, 40, 104)).bold()),
-                Span::styled("╚█████╔╝", Style::default().fg(Color::Rgb(0, 40, 104)).bold()),
-                Span::styled("███████╗", Style::default().fg(Color::Rgb(0, 40, 104)).bold()),
-                Span::styled("██║", Style::default().fg(Color::Rgb(0, 40, 104)).bold()),
-                Span::styled("   ██║   ", Style::default().fg(Color::Rgb(0, 40, 104)).bold()),
-            ]),
-            Line::from(vec![
-                Span::styled("                  ", Style::default()),
-                Span::styled("═══════════════════", Style::default().fg(Color::White)),
-                Span::raw("    "),
-                Span::styled("╚═╝      ", Style::default().fg(Color::Rgb(0, 40, 104))),
-                Span::styled(" ╚════╝ ", Style::default().fg(Color::Rgb(0, 40, 104))),
-                Span::styled("╚══════╝", Style::default().fg(Color::Rgb(0, 40, 104))),
-                Span::styled("╚═╝", Style::default().fg(Color::Rgb(0, 40, 104))),
-                Span::styled("   ╚═╝   ", Style::default().fg(Color::Rgb(0, 40, 104))),
-            ]),
-            Line::from(vec![
-                Span::styled("                  ", Style::default()),
-                Span::styled("═══════════════════", Style::default().fg(Color::Rgb(191, 10, 48))),
-            ]),
-            Line::from(vec![
-                Span::styled("                  ", Style::default()),
-                Span::styled("═══════════════════", Style::default().fg(Color::White)),
-            ]),
-        ];
-
-        let title_widget = Paragraph::new(flag_and_title)
-            .alignment(Alignment::Center);
-        frame.render_widget(title_widget, area);
-    }
-
     fn render_menu(&self, frame: &mut Frame, area: Rect) {
         let menu_area = centered_rect_fixed(30, self.items.len() as u16 + 2, area);
 
-        let items: Vec<Line> = self.items.iter().enumerate().map(|(i, (label, _))| {
-            if i == self.selected {
-                Line::from(vec![
-                    Span::styled(" ▶ ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
-                    Span::styled(*label, Style::default().fg(Color::White).bold()),
-                ])
-            } else {
-                Line::from(vec![
-                    Span::raw("   "),
-                    Span::styled(*label, Style::default().fg(Color::Rgb(140, 140, 160))),
-                ])
-            }
-        }).collect();
+        let items: Vec<Line> = self
+            .items
+            .iter()
+            .enumerate()
+            .map(|(i, (label, _))| {
+                if i == self.selected {
+                    Line::from(vec![
+                        Span::styled(" ▶ ", Style::default().fg(Color::Rgb(191, 10, 48)).bold()),
+                        Span::styled(*label, Style::default().fg(Color::White).bold()),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::raw("   "),
+                        Span::styled(*label, Style::default().fg(Color::Rgb(140, 140, 160))),
+                    ])
+                }
+            })
+            .collect();
 
-        let menu = Paragraph::new(items)
-            .block(Block::default()
+        let menu = Paragraph::new(items).block(
+            Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Rgb(60, 60, 80)))
-                .style(Style::default().bg(Color::Rgb(15, 15, 25))));
+                .style(Style::default().bg(Color::Rgb(15, 15, 25))),
+        );
 
         frame.render_widget(Clear, menu_area);
         frame.render_widget(menu, menu_area);

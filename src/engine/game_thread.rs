@@ -38,12 +38,10 @@ pub fn spawn_game_loop_after_demo(mut state: GameState, ch: &GameChannels) {
             Some(UiCommand::SlashCommand { cmd, args }) => {
                 handle_slash_command(&mut state, ch, &cmd, &args);
             }
-            Some(UiCommand::SaveGame(name)) => {
-                match state.db.create_snapshot(&name) {
-                    Ok(path) => ch.send(UiMessage::Success(format!("Saved: {}", path.display()))),
-                    Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
-                }
-            }
+            Some(UiCommand::SaveGame(name)) => match state.db.create_snapshot(&name) {
+                Ok(path) => ch.send(UiMessage::Success(format!("Saved: {}", path.display()))),
+                Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+            },
             Some(UiCommand::LoadGame(name)) => {
                 ch.send(UiMessage::System(format!("Loading '{}' (Phase 2)", name)));
             }
@@ -56,8 +54,12 @@ pub fn spawn_game_loop_after_demo(mut state: GameState, ch: &GameChannels) {
 
 fn game_loop_main(state: &mut GameState, ch: &GameChannels) {
     // Send initial welcome
-    ch.send(UiMessage::System("Welcome to POLIT — The American Politics Simulator".into()));
-    ch.send(UiMessage::System("Type /help for commands, or just start typing.".into()));
+    ch.send(UiMessage::System(
+        "Welcome to POLIT — The American Politics Simulator".into(),
+    ));
+    ch.send(UiMessage::System(
+        "Type /help for commands, or just start typing.".into(),
+    ));
     send_status(state, ch);
 
     // Start the first week
@@ -82,16 +84,18 @@ fn game_loop_main(state: &mut GameState, ch: &GameChannels) {
             Some(UiCommand::SlashCommand { cmd, args }) => {
                 handle_slash_command(state, ch, &cmd, &args);
             }
-            Some(UiCommand::SaveGame(name)) => {
-                match state.db.create_snapshot(&name) {
-                    Ok(path) => ch.send(UiMessage::Success(
-                        format!("Game saved: {}", path.display()),
-                    )),
-                    Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
-                }
-            }
+            Some(UiCommand::SaveGame(name)) => match state.db.create_snapshot(&name) {
+                Ok(path) => ch.send(UiMessage::Success(format!(
+                    "Game saved: {}",
+                    path.display()
+                ))),
+                Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+            },
             Some(UiCommand::LoadGame(name)) => {
-                ch.send(UiMessage::System(format!("Loading save '{}' (not yet implemented)", name)));
+                ch.send(UiMessage::System(format!(
+                    "Loading save '{}' (not yet implemented)",
+                    name
+                )));
             }
             None => {
                 // No commands, sleep briefly to not spin
@@ -105,7 +109,10 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
     state.phase = GamePhase::Dawn;
     send_status(state, ch);
 
-    ch.send(UiMessage::PhaseHeader(format!("Week {}, {} Begins", state.week, state.year)));
+    ch.send(UiMessage::PhaseHeader(format!(
+        "Week {}, {} Begins",
+        state.week, state.year
+    )));
 
     // Morning briefing (mock for now — Phase 2 will use AI)
     ch.send(UiMessage::Narrate("■ MORNING BRIEFING".into()));
@@ -117,7 +124,8 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
     if state.week == 1 {
         ch.send(UiMessage::Narrate(
             "You've just taken office as a city council member. Your constituents \
-             are watching to see what kind of leader you'll be.".into()
+             are watching to see what kind of leader you'll be."
+                .into(),
         ));
     } else {
         // Generate some variety in briefings
@@ -171,7 +179,9 @@ fn advance_week(state: &mut GameState) {
 
 fn handle_player_input(state: &mut GameState, ch: &GameChannels, text: &str) {
     if state.phase != GamePhase::Action {
-        ch.send(UiMessage::Warning("You can only act during the Action phase.".into()));
+        ch.send(UiMessage::Warning(
+            "You can only act during the Action phase.".into(),
+        ));
         return;
     }
 
@@ -180,25 +190,37 @@ fn handle_player_input(state: &mut GameState, ch: &GameChannels, text: &str) {
 
     // Mock AI response (will route through ONNX provider when model loaded)
     ch.send(UiMessage::Narrate(
-        "The room considers your words carefully. (AI responses coming in Phase 2)".into()
+        "The room considers your words carefully. (AI responses coming in Phase 2)".into(),
     ));
 
     // Example dice roll
     let result = dice::skill_check("Persuasion", 3, 12);
     ch.send(UiMessage::DiceRoll(format!(
         "🎲 Persuasion check: rolled {} + {} = {} vs DC {} → {}",
-        result.natural_roll, result.modifiers, result.total, result.dc,
-        if result.critical_success { "CRITICAL SUCCESS!" }
-        else if result.critical_failure { "CRITICAL FAILURE!" }
-        else if result.success { "Success" }
-        else { "Failure" }
+        result.natural_roll,
+        result.modifiers,
+        result.total,
+        result.dc,
+        if result.critical_success {
+            "CRITICAL SUCCESS!"
+        } else if result.critical_failure {
+            "CRITICAL FAILURE!"
+        } else if result.success {
+            "Success"
+        } else {
+            "Failure"
+        }
     )));
 
     // Spend 1 AP
     state.spend_ap(1);
     if state.ap_current() <= 0 {
-        ch.send(UiMessage::System("You've used all your Action Points for this week.".into()));
-        ch.send(UiMessage::System("Type /end to advance to next week.".into()));
+        ch.send(UiMessage::System(
+            "You've used all your Action Points for this week.".into(),
+        ));
+        ch.send(UiMessage::System(
+            "Type /end to advance to next week.".into(),
+        ));
     }
     send_status(state, ch);
 }
@@ -211,10 +233,15 @@ fn handle_slash_command(state: &mut GameState, ch: &GameChannels, cmd: &str, arg
             } else {
                 let name = args.join(" ");
                 if state.ap_current() < 2 {
-                    ch.send(UiMessage::Warning("Not enough AP. Meetings cost 2 AP.".into()));
+                    ch.send(UiMessage::Warning(
+                        "Not enough AP. Meetings cost 2 AP.".into(),
+                    ));
                 } else {
                     state.spend_ap(2);
-                    ch.send(UiMessage::System(format!("You spend 2 AP to meet with {}.", name)));
+                    ch.send(UiMessage::System(format!(
+                        "You spend 2 AP to meet with {}.",
+                        name
+                    )));
                     ch.send(UiMessage::NpcDialogue {
                         name: name.clone(),
                         text: format!(
@@ -228,17 +255,22 @@ fn handle_slash_command(state: &mut GameState, ch: &GameChannels, cmd: &str, arg
             }
         }
         "draft" => {
-            ch.send(UiMessage::System("Entering law drafting mode... (Coming in Phase 6)".into()));
+            ch.send(UiMessage::System(
+                "Entering law drafting mode... (Coming in Phase 6)".into(),
+            ));
         }
         "speech" => {
             if state.ap_current() < 1 {
-                ch.send(UiMessage::Warning("Not enough AP. Speeches cost 1 AP.".into()));
+                ch.send(UiMessage::Warning(
+                    "Not enough AP. Speeches cost 1 AP.".into(),
+                ));
             } else {
                 state.spend_ap(1);
                 ch.send(UiMessage::System("You step to the podium...".into()));
                 ch.send(UiMessage::Narrate(
                     "The small crowd at city hall turns to listen. \
-                     (Speech mechanics coming in Phase 9)".into()
+                     (Speech mechanics coming in Phase 9)"
+                        .into(),
                 ));
                 send_status(state, ch);
             }
@@ -258,7 +290,10 @@ fn handle_slash_command(state: &mut GameState, ch: &GameChannels, cmd: &str, arg
             if args.is_empty() {
                 ch.send(UiMessage::System("Usage: /load <save_name>".into()));
             } else {
-                ch.send(UiMessage::System(format!("Loading '{}' (coming soon)", args.join(" "))));
+                ch.send(UiMessage::System(format!(
+                    "Loading '{}' (coming soon)",
+                    args.join(" ")
+                )));
             }
         }
         _ => {

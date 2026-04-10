@@ -1,9 +1,9 @@
-mod engine;
-mod systems;
 mod ai;
-mod ui;
+mod engine;
 mod persistence;
 mod scripting;
+mod systems;
+mod ui;
 
 use engine::paths::GamePaths;
 
@@ -39,7 +39,5 @@ fn init_file_logger() {
             return;
         }
     }
-    tracing_subscriber::fmt()
-        .with_writer(std::io::sink)
-        .init();
+    tracing_subscriber::fmt().with_writer(std::io::sink).init();
 }

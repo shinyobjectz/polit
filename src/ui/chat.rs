@@ -12,14 +12,14 @@ pub struct ChatMessage {
 
 #[derive(Debug, Clone)]
 pub enum MessageStyle {
-    Narration,      // White
-    NpcDialogue,    // Cyan
-    PlayerInput,    // Green
-    SystemEvent,    // Yellow
-    Warning,        // Red
-    Success,        // Green
-    DiceRoll,       // Magenta
-    PhaseHeader,    // Bold white with separators
+    Narration,   // White
+    NpcDialogue, // Cyan
+    PlayerInput, // Green
+    SystemEvent, // Yellow
+    Warning,     // Red
+    Success,     // Green
+    DiceRoll,    // Magenta
+    PhaseHeader, // Bold white with separators
 }
 
 /// Scrollable chat stream
@@ -93,26 +93,30 @@ impl ChatStream {
     }
 
     pub fn render(&self, viewport_height: u16) -> Paragraph<'_> {
-        let lines: Vec<Line> = self.messages.iter().flat_map(|msg| {
-            let style = match msg.style {
-                MessageStyle::Narration => Style::default().fg(Color::White),
-                MessageStyle::NpcDialogue => Style::default().fg(Color::Cyan),
-                MessageStyle::PlayerInput => Style::default().fg(Color::Green),
-                MessageStyle::SystemEvent => Style::default().fg(Color::Yellow),
-                MessageStyle::Warning => Style::default().fg(Color::Red),
-                MessageStyle::Success => Style::default().fg(Color::Green),
-                MessageStyle::DiceRoll => Style::default().fg(Color::Magenta),
-                MessageStyle::PhaseHeader => Style::default().fg(Color::White).bold(),
-            };
+        let lines: Vec<Line> = self
+            .messages
+            .iter()
+            .flat_map(|msg| {
+                let style = match msg.style {
+                    MessageStyle::Narration => Style::default().fg(Color::White),
+                    MessageStyle::NpcDialogue => Style::default().fg(Color::Cyan),
+                    MessageStyle::PlayerInput => Style::default().fg(Color::Green),
+                    MessageStyle::SystemEvent => Style::default().fg(Color::Yellow),
+                    MessageStyle::Warning => Style::default().fg(Color::Red),
+                    MessageStyle::Success => Style::default().fg(Color::Green),
+                    MessageStyle::DiceRoll => Style::default().fg(Color::Magenta),
+                    MessageStyle::PhaseHeader => Style::default().fg(Color::White).bold(),
+                };
 
-            msg.text.lines().map(move |line| {
-                Line::from(Span::styled(line.to_string(), style))
-            }).chain(std::iter::once(Line::from("")))
-            .collect::<Vec<_>>()
-        }).collect();
+                msg.text
+                    .lines()
+                    .map(move |line| Line::from(Span::styled(line.to_string(), style)))
+                    .chain(std::iter::once(Line::from("")))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
 
-        let block = Block::default()
-            .borders(Borders::NONE);
+        let block = Block::default().borders(Borders::NONE);
 
         // Auto-scroll to bottom
         let total_lines = lines.len() as u16;

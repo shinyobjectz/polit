@@ -13,7 +13,10 @@ pub struct OnnxProvider {
 impl OnnxProvider {
     /// Create provider targeting a specific model
     /// model_id: "onnx-community/gemma-4-E2B-it-ONNX" or "onnx-community/gemma-4-E4B-it-ONNX"
-    pub fn new(model_id: &str, hf_token: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn new(
+        model_id: &str,
+        hf_token: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         tracing::info!("Initializing ONNX provider for {}", model_id);
 
         // TODO: Download model files via hf-hub
@@ -61,7 +64,11 @@ impl AiProvider for OnnxProvider {
         &self.model_id
     }
 
-    fn generate(&mut self, prompt: &str, mode: DmMode) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
+    fn generate(
+        &mut self,
+        prompt: &str,
+        mode: DmMode,
+    ) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
         if !self.loaded {
             return Err("ONNX model not yet loaded. Run model download first.".into());
         }

@@ -64,7 +64,9 @@ impl Database {
         key: &str,
         value: &T,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let cf = self.db.cf_handle(cf_name)
+        let cf = self
+            .db
+            .cf_handle(cf_name)
             .ok_or_else(|| format!("Column family '{}' not found", cf_name))?;
         let bytes = serde_json::to_vec(value)?;
         self.db.put_cf(&cf, key.as_bytes(), &bytes)?;
@@ -77,7 +79,9 @@ impl Database {
         cf_name: &str,
         key: &str,
     ) -> Result<Option<T>, Box<dyn std::error::Error>> {
-        let cf = self.db.cf_handle(cf_name)
+        let cf = self
+            .db
+            .cf_handle(cf_name)
             .ok_or_else(|| format!("Column family '{}' not found", cf_name))?;
         match self.db.get_cf(&cf, key.as_bytes())? {
             Some(bytes) => {
@@ -89,12 +93,10 @@ impl Database {
     }
 
     /// Delete a key from a column family
-    pub fn delete(
-        &self,
-        cf_name: &str,
-        key: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let cf = self.db.cf_handle(cf_name)
+    pub fn delete(&self, cf_name: &str, key: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let cf = self
+            .db
+            .cf_handle(cf_name)
             .ok_or_else(|| format!("Column family '{}' not found", cf_name))?;
         self.db.delete_cf(&cf, key.as_bytes())?;
         Ok(())
@@ -106,7 +108,9 @@ impl Database {
         cf_name: &str,
         prefix: &str,
     ) -> Result<Vec<(String, T)>, Box<dyn std::error::Error>> {
-        let cf = self.db.cf_handle(cf_name)
+        let cf = self
+            .db
+            .cf_handle(cf_name)
             .ok_or_else(|| format!("Column family '{}' not found", cf_name))?;
 
         let mut results = Vec::new();
@@ -127,7 +131,9 @@ impl Database {
 
     /// Create a snapshot (checkpoint) for save system
     pub fn create_snapshot(&self, name: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let snapshot_path = self.path.parent()
+        let snapshot_path = self
+            .path
+            .parent()
             .unwrap_or(Path::new("."))
             .join("saves")
             .join(name);
@@ -206,9 +212,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(dir.path().to_str().unwrap()).unwrap();
 
-        let rel1 = Relationship { trust: 10, ..Relationship::default() };
-        let rel2 = Relationship { trust: 20, ..Relationship::default() };
-        let rel3 = Relationship { trust: 30, ..Relationship::default() };
+        let rel1 = Relationship {
+            trust: 10,
+            ..Relationship::default()
+        };
+        let rel2 = Relationship {
+            trust: 20,
+            ..Relationship::default()
+        };
+        let rel3 = Relationship {
+            trust: 30,
+            ..Relationship::default()
+        };
 
         db.put(CF_RELATIONSHIPS, "player:npc1", &rel1).unwrap();
         db.put(CF_RELATIONSHIPS, "player:npc2", &rel2).unwrap();

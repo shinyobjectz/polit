@@ -18,11 +18,18 @@ pub enum ToolCall {
 
     /// Set difficulty class for upcoming roll
     #[serde(rename = "set_dc")]
-    SetDc { skill: String, dc: u32, reason: String },
+    SetDc {
+        skill: String,
+        dc: u32,
+        reason: String,
+    },
 
     /// Trigger a game event
     #[serde(rename = "trigger_event")]
-    TriggerEvent { event_type: String, description: String },
+    TriggerEvent {
+        event_type: String,
+        description: String,
+    },
 
     /// Modify a relationship edge
     #[serde(rename = "modify_rel")]
@@ -50,7 +57,11 @@ pub enum ToolCall {
 
     /// Trigger a dice roll / skill check
     #[serde(rename = "roll_dice")]
-    RollDice { skill: String, dc: u32, modifier: i32 },
+    RollDice {
+        skill: String,
+        dc: u32,
+        modifier: i32,
+    },
 
     /// Schedule a future event
     #[serde(rename = "schedule_event")]
@@ -141,18 +152,58 @@ mod tests {
     #[test]
     fn test_all_tool_variants_serialize() {
         let calls = vec![
-            ToolCall::Narrate { text: "test".into() },
-            ToolCall::SpawnNpc { name: "Test".into(), role: None, personality: None },
-            ToolCall::SetDc { skill: "test".into(), dc: 10, reason: "test".into() },
-            ToolCall::TriggerEvent { event_type: "crisis".into(), description: "test".into() },
-            ToolCall::ModifyRel { npc: "test".into(), field: "trust".into(), delta: 5 },
-            ToolCall::UpdateVar { name: "gdp".into(), value: "1.5".into() },
-            ToolCall::GrantCard { card_id: "test".into(), reason: "test".into() },
-            ToolCall::RevokeCard { card_id: "test".into(), reason: "test".into() },
-            ToolCall::SetMood { npc: "test".into(), mood: "happy".into() },
-            ToolCall::RollDice { skill: "test".into(), dc: 12, modifier: 3 },
-            ToolCall::ScheduleEvent { event_type: "test".into(), description: "test".into(), weeks_ahead: 3 },
-            ToolCall::ScoreAdjust { metric: "approval".into(), delta: 5 },
+            ToolCall::Narrate {
+                text: "test".into(),
+            },
+            ToolCall::SpawnNpc {
+                name: "Test".into(),
+                role: None,
+                personality: None,
+            },
+            ToolCall::SetDc {
+                skill: "test".into(),
+                dc: 10,
+                reason: "test".into(),
+            },
+            ToolCall::TriggerEvent {
+                event_type: "crisis".into(),
+                description: "test".into(),
+            },
+            ToolCall::ModifyRel {
+                npc: "test".into(),
+                field: "trust".into(),
+                delta: 5,
+            },
+            ToolCall::UpdateVar {
+                name: "gdp".into(),
+                value: "1.5".into(),
+            },
+            ToolCall::GrantCard {
+                card_id: "test".into(),
+                reason: "test".into(),
+            },
+            ToolCall::RevokeCard {
+                card_id: "test".into(),
+                reason: "test".into(),
+            },
+            ToolCall::SetMood {
+                npc: "test".into(),
+                mood: "happy".into(),
+            },
+            ToolCall::RollDice {
+                skill: "test".into(),
+                dc: 12,
+                modifier: 3,
+            },
+            ToolCall::ScheduleEvent {
+                event_type: "test".into(),
+                description: "test".into(),
+                weeks_ahead: 3,
+            },
+            ToolCall::ScoreAdjust {
+                metric: "approval".into(),
+                delta: 5,
+            },
         ];
 
         for call in &calls {

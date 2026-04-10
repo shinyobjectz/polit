@@ -1,6 +1,6 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph, Clear};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use super::chat::ChatStream;
 use crate::engine::channels::{UiChannels, UiCommand, UiMessage};
@@ -51,7 +51,10 @@ impl App {
         }
     }
 
-    pub fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run(
+        &mut self,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         while !self.should_quit {
             // Drain messages from game thread (non-blocking)
             self.process_game_messages();
@@ -75,7 +78,13 @@ impl App {
                 UiMessage::Success(text) => self.chat.add_success(&text),
                 UiMessage::DiceRoll(text) => self.chat.add_dice(&text),
                 UiMessage::PhaseHeader(text) => self.chat.add_phase_header(&text),
-                UiMessage::StatusUpdate { week, year, phase, ap_current, ap_max } => {
+                UiMessage::StatusUpdate {
+                    week,
+                    year,
+                    phase,
+                    ap_current,
+                    ap_max,
+                } => {
                     self.week = week;
                     self.year = year;
                     self.phase = phase;
@@ -98,9 +107,9 @@ impl App {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),   // Status bar
-                Constraint::Min(5),      // Chat stream
-                Constraint::Length(3),    // Input
+                Constraint::Length(1), // Status bar
+                Constraint::Min(5),    // Chat stream
+                Constraint::Length(3), // Input
             ])
             .split(area);
 
@@ -128,7 +137,12 @@ impl App {
         let input_text = Paragraph::new(Line::from(vec![
             Span::styled("> ", Style::default().fg(Color::Green)),
             Span::raw(&self.input),
-            Span::styled("▊", Style::default().fg(Color::White).add_modifier(Modifier::SLOW_BLINK)),
+            Span::styled(
+                "▊",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
             Span::raw("  "),
             Span::styled(phase_hint, Style::default().fg(Color::DarkGray)),
         ]))
@@ -147,10 +161,15 @@ impl App {
         let ap_bar = format!("{}{}", filled, empty);
 
         Paragraph::new(Line::from(vec![
-            Span::styled(" POLIT ", Style::default().fg(Color::Black).bg(Color::White).bold()),
             Span::styled(
-                format!(" │ Week {}, {} │ {} │ AP: {} {}/{} │ ",
-                    self.week, self.year, self.phase, ap_bar, self.ap_current, self.ap_max),
+                " POLIT ",
+                Style::default().fg(Color::Black).bg(Color::White).bold(),
+            ),
+            Span::styled(
+                format!(
+                    " │ Week {}, {} │ {} │ AP: {} {}/{} │ ",
+                    self.week, self.year, self.phase, ap_bar, self.ap_current, self.ap_max
+                ),
                 Style::default().fg(Color::White),
             ),
             Span::styled("[Tab] Menu", Style::default().fg(Color::DarkGray)),
@@ -162,88 +181,103 @@ impl App {
         let overlay_area = centered_rect(50, 70, area);
 
         let (title, items) = match overlay {
-            Overlay::CommandPalette => ("≡ COMMAND PALETTE", vec![
-                "",
-                "  /meet <npc>      Meet with an NPC (2 AP)",
-                "  /speech <topic>  Give a speech (1 AP)",
-                "  /draft           Draft legislation",
-                "  /end             End turn",
-                "",
-                "  /cards           View your deck",
-                "  /map             View map",
-                "  /news            News archive",
-                "  /stats           Economic dashboard",
-                "  /staff           Staff management",
-                "  /intel           Intelligence briefing",
-                "",
-                "  /save [name]     Save game",
-                "  /load <name>     Load game",
-                "  /help            Full help",
-                "  /quit            Quit game",
-                "",
-                "  [Esc] Close   [Tab] Toggle",
-            ]),
-            Overlay::Help => ("HELP", vec![
-                "",
-                "  POLIT — The American Politics Simulator",
-                "",
-                "  You are a newly elected city council member.",
-                "  Each week, you get Action Points (AP) to spend",
-                "  on meetings, speeches, legislation, and more.",
-                "",
-                "  Type freely to speak or act.",
-                "  Use /commands for specific actions.",
-                "  Press Tab for the command palette.",
-                "",
-                "  The AI Dungeon Master will respond to your",
-                "  actions and narrate the consequences.",
-                "  (AI integration coming in Phase 2)",
-                "",
-                "  [Esc] Close",
-            ]),
-            Overlay::Deck => ("🃏 CARDS & DECK", vec![
-                "",
-                "  Your deck is empty.",
-                "  Cards are acquired through gameplay —",
-                "  win negotiations, pass bills, build relationships.",
-                "",
-                "  Card types:",
-                "    [T] Tactic  — actions you can take",
-                "    [A] Asset   — resources you hold",
-                "    [P] Position — what you stand for",
-                "",
-                "  (Card system coming in Phase 4)",
-                "",
-                "  [Esc] Close",
-            ]),
-            Overlay::Map => ("🗺  MAP", vec![
-                "",
-                "       ┌───────────────────────┐",
-                "       │    SPRINGFIELD         │",
-                "       │                        │",
-                "       │   [D1]  [D2]  [D3]    │",
-                "       │   Urban Suburb Rural   │",
-                "       │                        │",
-                "       │   [D4]  [D5]           │",
-                "       │   College Industrial   │",
-                "       │                        │",
-                "       └───────────────────────┘",
-                "",
-                "  You represent District 1 (Urban)",
-                "  Population: ~45,000",
-                "",
-                "  (Full map coming in Phase 7)",
-                "",
-                "  [Esc] Close",
-            ]),
-            _ => {
-                let name = format!("{:?}", overlay);
-                (name.leak() as &str, vec![
+            Overlay::CommandPalette => (
+                "≡ COMMAND PALETTE",
+                vec![
                     "",
-                    "  (Content coming in later phases)",
+                    "  /meet <npc>      Meet with an NPC (2 AP)",
+                    "  /speech <topic>  Give a speech (1 AP)",
+                    "  /draft           Draft legislation",
+                    "  /end             End turn",
+                    "",
+                    "  /cards           View your deck",
+                    "  /map             View map",
+                    "  /news            News archive",
+                    "  /stats           Economic dashboard",
+                    "  /staff           Staff management",
+                    "  /intel           Intelligence briefing",
+                    "",
+                    "  /save [name]     Save game",
+                    "  /load <name>     Load game",
+                    "  /help            Full help",
+                    "  /quit            Quit game",
+                    "",
+                    "  [Esc] Close   [Tab] Toggle",
+                ],
+            ),
+            Overlay::Help => (
+                "HELP",
+                vec![
+                    "",
+                    "  POLIT — The American Politics Simulator",
+                    "",
+                    "  You are a newly elected city council member.",
+                    "  Each week, you get Action Points (AP) to spend",
+                    "  on meetings, speeches, legislation, and more.",
+                    "",
+                    "  Type freely to speak or act.",
+                    "  Use /commands for specific actions.",
+                    "  Press Tab for the command palette.",
+                    "",
+                    "  The AI Dungeon Master will respond to your",
+                    "  actions and narrate the consequences.",
+                    "  (AI integration coming in Phase 2)",
                     "",
                     "  [Esc] Close",
-                ])
+                ],
+            ),
+            Overlay::Deck => (
+                "🃏 CARDS & DECK",
+                vec![
+                    "",
+                    "  Your deck is empty.",
+                    "  Cards are acquired through gameplay —",
+                    "  win negotiations, pass bills, build relationships.",
+                    "",
+                    "  Card types:",
+                    "    [T] Tactic  — actions you can take",
+                    "    [A] Asset   — resources you hold",
+                    "    [P] Position — what you stand for",
+                    "",
+                    "  (Card system coming in Phase 4)",
+                    "",
+                    "  [Esc] Close",
+                ],
+            ),
+            Overlay::Map => (
+                "🗺  MAP",
+                vec![
+                    "",
+                    "       ┌───────────────────────┐",
+                    "       │    SPRINGFIELD         │",
+                    "       │                        │",
+                    "       │   [D1]  [D2]  [D3]    │",
+                    "       │   Urban Suburb Rural   │",
+                    "       │                        │",
+                    "       │   [D4]  [D5]           │",
+                    "       │   College Industrial   │",
+                    "       │                        │",
+                    "       └───────────────────────┘",
+                    "",
+                    "  You represent District 1 (Urban)",
+                    "  Population: ~45,000",
+                    "",
+                    "  (Full map coming in Phase 7)",
+                    "",
+                    "  [Esc] Close",
+                ],
+            ),
+            _ => {
+                let name = format!("{:?}", overlay);
+                (
+                    name.leak() as &str,
+                    vec![
+                        "",
+                        "  (Content coming in later phases)",
+                        "",
+                        "  [Esc] Close",
+                    ],
+                )
             }
         };
 
@@ -375,7 +409,8 @@ impl App {
             }
         } else {
             // Free text → game thread
-            self.channels.send(UiCommand::PlayerInput(input.to_string()));
+            self.channels
+                .send(UiCommand::PlayerInput(input.to_string()));
         }
     }
 }
