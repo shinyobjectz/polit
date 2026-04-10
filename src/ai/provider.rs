@@ -208,7 +208,7 @@ impl AiProvider for CandleProvider {
 }
 
 /// Clean raw model output: strip JSON artifacts, special tokens, tool call syntax
-fn clean_model_output(raw: &str) -> String {
+pub fn clean_model_output(raw: &str) -> String {
     let mut text = raw.to_string();
 
     // Strip special tokens

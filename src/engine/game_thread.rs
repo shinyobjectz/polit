@@ -166,21 +166,21 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
         state.week, state.year
     )));
 
-    // Use AI for morning briefing
+    // Use agent for morning briefing (with memory + tool execution)
     let ctx = build_context(state);
-    match state.ai.respond(
+    let response = state.ai.run_turn(
         "Generate the morning briefing for this week.",
         &ctx,
         DmMode::Narrator,
-    ) {
-        Ok(response) => {
-            ch.send(UiMessage::Narrate("■ MORNING BRIEFING".into()));
-            ch.send(UiMessage::Narrate(response.narration));
-            process_tool_calls(state, ch, &response.tool_calls);
-        }
-        Err(e) => {
-            ch.send(UiMessage::Warning(format!("AI error: {}", e)));
-        }
+        |tool| {
+            // Tool execution during briefing — schedule events, update vars
+            None
+        },
+    );
+    ch.send(UiMessage::Narrate("■ MORNING BRIEFING".into()));
+    ch.send(UiMessage::Narrate(response.narration));
+    for tool in &response.executed_tools {
+        process_tool_calls(state, ch, &[tool.clone()]);
     }
 
     ch.send(UiMessage::Narrate(format!(

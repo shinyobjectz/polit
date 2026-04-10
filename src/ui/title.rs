@@ -2,6 +2,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use super::music::MusicController;
 use super::theme;
 
 /// Title screen menu options
@@ -19,6 +20,7 @@ pub struct TitleScreen {
     items: Vec<(&'static str, TitleAction)>,
     has_save: bool,
     frame_count: u64,
+    music: MusicController,
 }
 
 impl TitleScreen {
@@ -31,12 +33,15 @@ impl TitleScreen {
         items.push(("  Settings", TitleAction::Settings));
         items.push(("  Quit", TitleAction::Quit));
 
+        let music = MusicController::start_anthem();
+
         Self {
             selected: 0,
             action: None,
             items,
             has_save,
             frame_count: 0,
+            music,
         }
     }
 
@@ -65,14 +70,20 @@ impl TitleScreen {
                             }
                         }
                         KeyCode::Enter => {
+                            self.music.stop();
                             return Ok(self.items[self.selected].1);
                         }
+                        KeyCode::Char('m') => {
+                            self.music.toggle_mute();
+                        }
                         KeyCode::Char('q') | KeyCode::Esc => {
+                            self.music.stop();
                             return Ok(TitleAction::Quit);
                         }
                         KeyCode::Char('c')
                             if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
                         {
+                            self.music.stop();
                             return Ok(TitleAction::Quit);
                         }
                         _ => {}
@@ -120,10 +131,16 @@ impl TitleScreen {
         self.render_menu(frame, layout[4]);
 
         // Footer
+        let mute_label = if self.music.is_muted() {
+            "M Music ♪off"
+        } else {
+            "M Music ♪on"
+        };
         let footer = Paragraph::new(Line::from(vec![
             Span::styled("↑↓ Navigate  ", Style::default().fg(theme::FG_MUTED)),
             Span::styled("Enter Select  ", Style::default().fg(theme::FG_MUTED)),
-            Span::styled("Q Quit", Style::default().fg(theme::FG_MUTED)),
+            Span::styled(mute_label, Style::default().fg(theme::FG_MUTED)),
+            Span::styled("  Q Quit", Style::default().fg(theme::FG_MUTED)),
         ]))
         .alignment(Alignment::Center);
         frame.render_widget(footer, layout[5]);

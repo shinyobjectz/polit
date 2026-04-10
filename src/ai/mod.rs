@@ -1,7 +1,10 @@
+pub mod agent;
 pub mod context;
+pub mod memory;
 pub mod mock;
 pub mod provider;
 pub mod tools;
+pub mod vfs;
 
 use tools::DmResponse;
 
@@ -28,24 +31,45 @@ pub trait AiProvider: Send {
     fn name(&self) -> &str;
 }
 
-/// The AI harness wraps a provider and handles context building
+/// The AI harness wraps a provider and the agent orchestrator.
+/// This is the main interface for the game to interact with the AI.
 pub struct AiHarness {
-    provider: Box<dyn AiProvider>,
+    pub provider: Box<dyn AiProvider>,
+    pub agent: agent::Agent,
 }
 
 impl AiHarness {
     pub fn new(provider: Box<dyn AiProvider>) -> Self {
-        Self { provider }
-    }
-
-    /// Create with mock provider (for testing / when no model available)
-    pub fn mock() -> Self {
         Self {
-            provider: Box::new(mock::MockProvider::new()),
+            provider,
+            agent: agent::Agent::new(DmMode::DungeonMaster),
         }
     }
 
-    /// Generate a DM response given player input and game context
+    pub fn mock() -> Self {
+        Self {
+            provider: Box::new(mock::MockProvider::new()),
+            agent: agent::Agent::new(DmMode::DungeonMaster),
+        }
+    }
+
+    /// Run a full agent turn with tool execution
+    pub fn run_turn<F>(
+        &mut self,
+        player_input: &str,
+        context: &context::GameContext,
+        mode: DmMode,
+        tool_executor: F,
+    ) -> agent::AgentResponse
+    where
+        F: FnMut(&tools::ToolCall) -> Option<String>,
+    {
+        self.agent.set_mode(mode);
+        self.agent
+            .run_turn(player_input, context, self.provider.as_mut(), tool_executor)
+    }
+
+    /// Simple generate without tool loop (for backward compat)
     pub fn respond(
         &mut self,
         player_input: &str,
@@ -58,5 +82,9 @@ impl AiHarness {
 
     pub fn provider_name(&self) -> &str {
         self.provider.name()
+    }
+
+    pub fn memory(&self) -> &memory::ConversationMemory {
+        &self.agent.memory
     }
 }

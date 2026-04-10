@@ -2,6 +2,7 @@ pub mod app;
 pub mod character_creation;
 pub mod chat;
 pub mod intro;
+pub mod music;
 pub mod scenario;
 pub mod theme;
 pub mod title;
