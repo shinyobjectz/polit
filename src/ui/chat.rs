@@ -22,77 +22,100 @@ pub enum MessageStyle {
     PhaseHeader, // Bold white with separators
 }
 
-/// Scrollable chat stream
+/// Scrollable chat stream with manual scroll support
 pub struct ChatStream {
     pub messages: Vec<ChatMessage>,
-    pub scroll_offset: u16,
+    /// Manual scroll offset from bottom (0 = at bottom)
+    pub scroll_up: u16,
+    /// Whether user has manually scrolled (disables auto-scroll)
+    pub user_scrolled: bool,
+    /// Total rendered lines (for scroll bounds)
+    total_lines: u16,
 }
 
 impl ChatStream {
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
-            scroll_offset: 0,
+            scroll_up: 0,
+            user_scrolled: false,
+            total_lines: 0,
+        }
+    }
+
+    fn add_message(&mut self, style: MessageStyle, text: &str) {
+        self.messages.push(ChatMessage {
+            style,
+            text: text.to_string(),
+        });
+        // Auto-scroll to bottom on new content (unless user scrolled up)
+        if !self.user_scrolled {
+            self.scroll_up = 0;
         }
     }
 
     pub fn add_narration(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::Narration,
-            text: text.to_string(),
-        });
+        self.add_message(MessageStyle::Narration, text);
     }
 
     pub fn add_npc(&mut self, name: &str, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::NpcDialogue,
-            text: format!("■ {}\n{}", name.to_uppercase(), text),
-        });
+        self.add_message(
+            MessageStyle::NpcDialogue,
+            &format!("■ {}\n{}", name.to_uppercase(), text),
+        );
     }
 
     pub fn add_player(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::PlayerInput,
-            text: format!("> {}", text),
-        });
+        self.add_message(MessageStyle::PlayerInput, &format!("> {}", text));
     }
 
     pub fn add_system(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::SystemEvent,
-            text: text.to_string(),
-        });
+        self.add_message(MessageStyle::SystemEvent, text);
     }
 
     pub fn add_success(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::Success,
-            text: text.to_string(),
-        });
+        self.add_message(MessageStyle::Success, text);
     }
 
     pub fn add_warning(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::Warning,
-            text: text.to_string(),
-        });
+        self.add_message(MessageStyle::Warning, text);
     }
 
     pub fn add_dice(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::DiceRoll,
-            text: text.to_string(),
-        });
+        self.add_message(MessageStyle::DiceRoll, text);
     }
 
     pub fn add_phase_header(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
-            style: MessageStyle::PhaseHeader,
-            text: format!("┄┄┄┄┄┄┄┄┄┄┄┄ {} ┄┄┄┄┄┄┄┄┄┄┄┄", text),
-        });
+        self.add_message(
+            MessageStyle::PhaseHeader,
+            &format!("┄┄┄┄┄┄┄┄┄┄┄┄ {} ┄┄┄┄┄┄┄┄┄┄┄┄", text),
+        );
     }
 
-    pub fn render(&self, viewport_height: u16) -> Paragraph<'_> {
+    /// Scroll up by N lines
+    pub fn scroll_up_by(&mut self, lines: u16) {
+        let max_scroll = self.total_lines.saturating_sub(5);
+        self.scroll_up = (self.scroll_up + lines).min(max_scroll);
+        self.user_scrolled = true;
+    }
+
+    /// Scroll down by N lines
+    pub fn scroll_down_by(&mut self, lines: u16) {
+        if self.scroll_up <= lines {
+            self.scroll_up = 0;
+            self.user_scrolled = false; // Back at bottom = resume auto-scroll
+        } else {
+            self.scroll_up -= lines;
+        }
+    }
+
+    /// Jump to bottom
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_up = 0;
+        self.user_scrolled = false;
+    }
+
+    pub fn render(&mut self, viewport_height: u16) -> Paragraph<'_> {
         let lines: Vec<Line> = self
             .messages
             .iter()
@@ -116,15 +139,14 @@ impl ChatStream {
             })
             .collect();
 
+        self.total_lines = lines.len() as u16;
+
         let block = Block::default().borders(Borders::NONE);
 
-        // Auto-scroll to bottom
-        let total_lines = lines.len() as u16;
-        let scroll = if total_lines > viewport_height.saturating_sub(2) {
-            total_lines - viewport_height.saturating_sub(2)
-        } else {
-            0
-        };
+        // Calculate scroll position: bottom minus user offset
+        let visible = viewport_height.saturating_sub(2);
+        let max_scroll = self.total_lines.saturating_sub(visible);
+        let scroll = max_scroll.saturating_sub(self.scroll_up);
 
         Paragraph::new(lines)
             .block(block)

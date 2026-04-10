@@ -18,6 +18,7 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         .map(|mut d| d.next().is_some())
         .unwrap_or(false);
 
+    // Enter alternate screen ONCE for the entire session
     let mut terminal = ratatui::init();
 
     // Show title screen
@@ -29,35 +30,43 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             ratatui::restore();
             return Ok(());
         }
-        TitleAction::Demo => {
-            ratatui::restore();
-            return run_demo();
-        }
         TitleAction::Settings => {
-            // TODO: settings screen
             ratatui::restore();
             return Ok(());
         }
+        TitleAction::Demo => {
+            // Run demo in the SAME terminal session (no restore/reinit)
+            let state = GameState::new(paths.db.to_str().unwrap())?;
+            let channels = Channels::new();
+            let (ui_channels, game_channels) = channels.split();
+
+            let game_handle = std::thread::Builder::new()
+                .name("polit-demo".to_string())
+                .spawn(move || {
+                    demo::run_demo(state, game_channels);
+                })
+                .expect("Failed to spawn demo thread");
+
+            let mut app_inst = app::App::new(ui_channels);
+            let result = app_inst.run(&mut terminal);
+            ratatui::restore();
+            let _ = game_handle.join();
+            return result;
+        }
         TitleAction::NewCampaign | TitleAction::ContinueCampaign => {
-            // Proceed to game
+            // Continue in SAME terminal session
+            let state = GameState::new(paths.db.to_str().unwrap())?;
+            let channels = Channels::new();
+            let (ui_channels, game_channels) = channels.split();
+            let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+            let mut app_inst = app::App::new(ui_channels);
+            let result = app_inst.run(&mut terminal);
+            ratatui::restore();
+            let _ = game_handle.join();
+            return result;
         }
     }
-
-    ratatui::restore();
-
-    // Now launch the game with its own terminal session
-    let state = GameState::new(paths.db.to_str().unwrap())?;
-    let channels = Channels::new();
-    let (ui_channels, game_channels) = channels.split();
-    let game_handle = game_thread::spawn_game_thread(state, game_channels);
-
-    let mut terminal = ratatui::init();
-    let mut app_inst = app::App::new(ui_channels);
-    let result = app_inst.run(&mut terminal);
-    ratatui::restore();
-
-    let _ = game_handle.join();
-    result
 }
 
 /// Launch directly into demo mode (skips title screen)

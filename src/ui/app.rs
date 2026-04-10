@@ -116,7 +116,7 @@ impl App {
             self.process_game_messages();
 
             // Render
-            terminal.draw(|frame| self.render(frame))?;
+            self.draw(terminal)?;
 
             // Handle keyboard input (with short poll so we stay responsive)
             self.handle_input()?;
@@ -157,26 +157,14 @@ impl App {
         }
     }
 
-    fn render(&self, frame: &mut Frame) {
-        let area = frame.area();
-
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // Status bar
-                Constraint::Min(5),    // Chat stream
-                Constraint::Length(3), // Input
-            ])
-            .split(area);
-
-        // Status bar
-        frame.render_widget(self.render_status_bar(), layout[0]);
-
-        // Chat stream (auto-scroll to bottom)
-        let chat_widget = self.chat.render(layout[1].height);
-        frame.render_widget(chat_widget, layout[1]);
-
-        // Input line
+    fn draw(
+        &mut self,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Pre-compute values needed by the render closure
+        let status_bar = self.build_status_bar();
+        let chat_height = terminal.size()?.height.saturating_sub(4);
+        let chat_widget = self.chat.render(chat_height);
         let phase_hint = match self.phase.as_str() {
             "Action" => {
                 if self.ap_current > 0 {
@@ -190,30 +178,63 @@ impl App {
             "Dusk" => "[Resolving...]".into(),
             _ => format!("[{}]", self.phase),
         };
+        let input_str = self.input.clone();
+        let overlay = self.overlay.clone();
+        let deck = self.deck.clone();
+        let coherence_label = self.coherence_label.clone();
+        let coherence_score = self.coherence_score;
 
-        let input_block = Block::default().borders(Borders::TOP);
-        let input_text = Paragraph::new(Line::from(vec![
-            Span::styled("> ", Style::default().fg(Color::Green)),
-            Span::raw(&self.input),
-            Span::styled(
-                "▊",
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-            Span::raw("  "),
-            Span::styled(phase_hint, Style::default().fg(Color::DarkGray)),
-        ]))
-        .block(input_block);
-        frame.render_widget(input_text, layout[2]);
+        terminal.draw(|frame| {
+            let area = frame.area();
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Min(5),
+                    Constraint::Length(3),
+                ])
+                .split(area);
 
-        // Overlay
-        if let Some(ref overlay) = self.overlay {
-            self.render_overlay(frame, overlay, area);
-        }
+            // Status bar
+            frame.render_widget(status_bar, layout[0]);
+
+            // Chat
+            frame.render_widget(chat_widget, layout[1]);
+
+            // Input line
+            let input_block = Block::default().borders(Borders::TOP);
+            let input_text = Paragraph::new(Line::from(vec![
+                Span::styled("> ", Style::default().fg(Color::Green)),
+                Span::raw(&input_str),
+                Span::styled(
+                    "▊",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::SLOW_BLINK),
+                ),
+                Span::raw("  "),
+                Span::styled(&phase_hint, Style::default().fg(Color::DarkGray)),
+            ]))
+            .block(input_block);
+            frame.render_widget(input_text, layout[2]);
+
+            // Overlay
+            if let Some(ref ov) = overlay {
+                let overlay_area = centered_rect(50, 70, area);
+                render_overlay_static(
+                    frame,
+                    ov,
+                    overlay_area,
+                    &deck,
+                    &coherence_label,
+                    coherence_score,
+                );
+            }
+        })?;
+        Ok(())
     }
 
-    fn render_status_bar(&self) -> Paragraph<'_> {
+    fn build_status_bar(&self) -> Paragraph<'static> {
         let filled = "█".repeat(self.ap_current.max(0) as usize);
         let empty = "░".repeat((self.ap_max - self.ap_current).max(0) as usize);
         let ap_bar = format!("{}{}", filled, empty);
@@ -230,212 +251,19 @@ impl App {
                 ),
                 Style::default().fg(Color::White),
             ),
-            Span::styled("[Tab] Menu", Style::default().fg(Color::DarkGray)),
+            if self.chat.user_scrolled {
+                Span::styled(
+                    format!("[↑{} scrolled — End to return] ", self.chat.scroll_up),
+                    Style::default().fg(Color::Yellow),
+                )
+            } else {
+                Span::styled(
+                    "[Tab] Menu  [PgUp/PgDn] Scroll",
+                    Style::default().fg(Color::DarkGray),
+                )
+            },
         ]))
         .style(Style::default().bg(Color::Rgb(30, 30, 40)))
-    }
-
-    fn render_overlay(&self, frame: &mut Frame, overlay: &Overlay, area: Rect) {
-        let overlay_area = centered_rect(50, 70, area);
-
-        let (title, items) = match overlay {
-            Overlay::CommandPalette => (
-                "≡ COMMAND PALETTE",
-                vec![
-                    "",
-                    "  /meet <npc>      Meet with an NPC (2 AP)",
-                    "  /speech <topic>  Give a speech (1 AP)",
-                    "  /draft           Draft legislation",
-                    "  /end             End turn",
-                    "",
-                    "  /cards           View your deck",
-                    "  /map             View map",
-                    "  /news            News archive",
-                    "  /stats           Economic dashboard",
-                    "  /staff           Staff management",
-                    "  /intel           Intelligence briefing",
-                    "",
-                    "  /save [name]     Save game",
-                    "  /load <name>     Load game",
-                    "  /help            Full help",
-                    "  /quit            Quit game",
-                    "",
-                    "  [Esc] Close   [Tab] Toggle",
-                ],
-            ),
-            Overlay::Help => (
-                "HELP",
-                vec![
-                    "",
-                    "  POLIT — The American Politics Simulator",
-                    "",
-                    "  You are a newly elected city council member.",
-                    "  Each week, you get Action Points (AP) to spend",
-                    "  on meetings, speeches, legislation, and more.",
-                    "",
-                    "  Type freely to speak or act.",
-                    "  Use /commands for specific actions.",
-                    "  Press Tab for the command palette.",
-                    "",
-                    "  The AI Dungeon Master will respond to your",
-                    "  actions and narrate the consequences.",
-                    "  (AI integration coming in Phase 2)",
-                    "",
-                    "  [Esc] Close",
-                ],
-            ),
-            Overlay::Deck => {
-                // Dynamic card overlay — render separately
-                self.render_deck_overlay(frame, overlay_area);
-                return;
-            }
-            Overlay::Map => (
-                "🗺  MAP",
-                vec![
-                    "",
-                    "       ┌───────────────────────┐",
-                    "       │    SPRINGFIELD         │",
-                    "       │                        │",
-                    "       │   [D1]  [D2]  [D3]    │",
-                    "       │   Urban Suburb Rural   │",
-                    "       │                        │",
-                    "       │   [D4]  [D5]           │",
-                    "       │   College Industrial   │",
-                    "       │                        │",
-                    "       └───────────────────────┘",
-                    "",
-                    "  You represent District 1 (Urban)",
-                    "  Population: ~45,000",
-                    "",
-                    "  (Full map coming in Phase 7)",
-                    "",
-                    "  [Esc] Close",
-                ],
-            ),
-            _ => {
-                let name = format!("{:?}", overlay);
-                (
-                    name.leak() as &str,
-                    vec![
-                        "",
-                        "  (Content coming in later phases)",
-                        "",
-                        "  [Esc] Close",
-                    ],
-                )
-            }
-        };
-
-        let text: Vec<Line> = items.iter().map(|s| Line::from(*s)).collect();
-        let block = Block::default()
-            .title(format!(" {} ", title))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
-            .style(Style::default().bg(Color::Rgb(15, 15, 25)));
-
-        frame.render_widget(Clear, overlay_area);
-        frame.render_widget(Paragraph::new(text).block(block), overlay_area);
-    }
-
-    fn render_deck_overlay(&self, frame: &mut Frame, area: Rect) {
-        let mut lines: Vec<Line> = vec![Line::from("")];
-
-        // Header with coherence
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {} cards in deck", self.deck.len()),
-                Style::default().fg(Color::White),
-            ),
-            Span::raw("  │  "),
-            Span::styled(
-                format!(
-                    "Coherence: {} ({})",
-                    self.coherence_label, self.coherence_score
-                ),
-                Style::default().fg(match self.coherence_label.as_str() {
-                    "Principled" => Color::Green,
-                    "Flip-Flopper" => Color::Red,
-                    _ => Color::Yellow,
-                }),
-            ),
-        ]));
-        lines.push(Line::from(""));
-
-        // Group by type
-        let tactics: Vec<_> = self
-            .deck
-            .iter()
-            .filter(|c| c.card_type == "tactic")
-            .collect();
-        let assets: Vec<_> = self
-            .deck
-            .iter()
-            .filter(|c| c.card_type == "asset")
-            .collect();
-        let positions: Vec<_> = self
-            .deck
-            .iter()
-            .filter(|c| c.card_type == "position")
-            .collect();
-
-        if !tactics.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  ── TACTICS ──",
-                Style::default().fg(Color::Cyan).bold(),
-            )));
-            for card in &tactics {
-                lines.push(render_card_line(card, "T"));
-            }
-            lines.push(Line::from(""));
-        }
-
-        if !assets.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  ── ASSETS ──",
-                Style::default().fg(Color::Yellow).bold(),
-            )));
-            for card in &assets {
-                lines.push(render_card_line(card, "A"));
-            }
-            lines.push(Line::from(""));
-        }
-
-        if !positions.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  ── POSITIONS ──",
-                Style::default().fg(Color::Magenta).bold(),
-            )));
-            for card in &positions {
-                lines.push(render_card_line(card, "P"));
-            }
-            lines.push(Line::from(""));
-        }
-
-        if self.deck.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  Your deck is empty.",
-                Style::default().fg(Color::DarkGray),
-            )));
-            lines.push(Line::from(Span::styled(
-                "  Cards are acquired through gameplay.",
-                Style::default().fg(Color::DarkGray),
-            )));
-            lines.push(Line::from(""));
-        }
-
-        lines.push(Line::from(Span::styled(
-            "  [Esc] Close",
-            Style::default().fg(Color::DarkGray),
-        )));
-
-        let block = Block::default()
-            .title(" 🃏 CARDS & DECK ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
-            .style(Style::default().bg(Color::Rgb(15, 15, 25)));
-
-        frame.render_widget(Clear, area);
-        frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
     fn handle_input(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -469,11 +297,31 @@ impl App {
                             self.process_input(&input);
                         }
                     }
+                    KeyCode::PageUp => {
+                        self.chat.scroll_up_by(10);
+                    }
+                    KeyCode::PageDown => {
+                        self.chat.scroll_down_by(10);
+                    }
+                    KeyCode::Home => {
+                        self.chat.scroll_up_by(1000); // Jump to top
+                    }
+                    KeyCode::End => {
+                        self.chat.scroll_to_bottom();
+                    }
+                    KeyCode::Up if self.input.is_empty() => {
+                        self.chat.scroll_up_by(3);
+                    }
+                    KeyCode::Down if self.input.is_empty() => {
+                        self.chat.scroll_down_by(3);
+                    }
                     KeyCode::Backspace => {
                         self.input.pop();
                     }
                     KeyCode::Char(c) => {
                         self.input.push(c);
+                        // Resume auto-scroll when user types
+                        self.chat.scroll_to_bottom();
                     }
                     _ => {}
                 }
@@ -559,6 +407,177 @@ impl App {
                 .send(UiCommand::PlayerInput(input.to_string()));
         }
     }
+}
+
+fn render_overlay_static(
+    frame: &mut Frame,
+    overlay: &Overlay,
+    area: Rect,
+    deck: &[CardView],
+    coherence_label: &str,
+    coherence_score: i32,
+) {
+    match overlay {
+        Overlay::Deck => {
+            render_deck_static(frame, area, deck, coherence_label, coherence_score);
+            return;
+        }
+        _ => {}
+    }
+
+    let (title, items): (&str, Vec<&str>) = match overlay {
+        Overlay::CommandPalette => (
+            "≡ COMMAND PALETTE",
+            vec![
+                "",
+                "  /meet <npc>      Meet with an NPC (2 AP)",
+                "  /call <npc>      Phone call (1 AP)",
+                "  /speech <topic>  Give a speech (1 AP)",
+                "  /campaign        Campaign in district (2 AP)",
+                "  /draft           Draft legislation",
+                "  /end             End turn",
+                "",
+                "  /cards           View your deck",
+                "  /map             View map",
+                "  /news            News archive",
+                "  /stats           Economic dashboard",
+                "  /staff           Staff management",
+                "  /intel           Intelligence briefing",
+                "",
+                "  /save [name]     Save game",
+                "  /load <name>     Load game",
+                "  /help            Full help",
+                "  /quit            Quit game",
+                "",
+                "  [Esc] Close   [Tab] Toggle",
+            ],
+        ),
+        Overlay::Help => (
+            "HELP",
+            vec![
+                "",
+                "  POLIT — The American Politics Simulator",
+                "",
+                "  You are a politician. Each week you get Action Points",
+                "  to spend on meetings, speeches, legislation, and more.",
+                "",
+                "  Type freely to speak or act.",
+                "  Use /commands for specific actions.",
+                "  Press Tab for the command palette.",
+                "",
+                "  Scrolling: PgUp/PgDn or ↑↓ (when input empty)",
+                "  Home = scroll to top, End = back to bottom",
+                "",
+                "  [Esc] Close",
+            ],
+        ),
+        Overlay::Map => (
+            "🗺  MAP",
+            vec![
+                "",
+                "       ┌───────────────────────┐",
+                "       │    SPRINGFIELD         │",
+                "       │                        │",
+                "       │   [D1]  [D2]  [D3]    │",
+                "       │   Urban Suburb Rural   │",
+                "       │                        │",
+                "       │   [D4]  [D5]           │",
+                "       │   College Industrial   │",
+                "       └───────────────────────┘",
+                "",
+                "  You represent District 1 (Urban)",
+                "",
+                "  [Esc] Close",
+            ],
+        ),
+        _ => {
+            let name = format!("{:?}", overlay);
+            (
+                Box::leak(name.into_boxed_str()),
+                vec!["", "  (Coming soon)", "", "  [Esc] Close"],
+            )
+        }
+    };
+
+    let text: Vec<Line> = items.iter().map(|s| Line::from(*s)).collect();
+    let block = Block::default()
+        .title(format!(" {} ", title))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Rgb(15, 15, 25)));
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(Paragraph::new(text).block(block), area);
+}
+
+fn render_deck_static(
+    frame: &mut Frame,
+    area: Rect,
+    deck: &[CardView],
+    coherence_label: &str,
+    coherence_score: i32,
+) {
+    let mut lines: Vec<Line> = vec![Line::from("")];
+
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("  {} cards in deck", deck.len()),
+            Style::default().fg(Color::White),
+        ),
+        Span::raw("  │  "),
+        Span::styled(
+            format!("Coherence: {} ({})", coherence_label, coherence_score),
+            Style::default().fg(match coherence_label {
+                "Principled" => Color::Green,
+                "Flip-Flopper" => Color::Red,
+                _ => Color::Yellow,
+            }),
+        ),
+    ]));
+    lines.push(Line::from(""));
+
+    let tactics: Vec<_> = deck.iter().filter(|c| c.card_type == "tactic").collect();
+    let assets: Vec<_> = deck.iter().filter(|c| c.card_type == "asset").collect();
+    let positions: Vec<_> = deck.iter().filter(|c| c.card_type == "position").collect();
+
+    for (label, color, tag, cards) in [
+        ("── TACTICS ──", Color::Cyan, "T", &tactics),
+        ("── ASSETS ──", Color::Yellow, "A", &assets),
+        ("── POSITIONS ──", Color::Magenta, "P", &positions),
+    ] {
+        if !cards.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", label),
+                Style::default().fg(color).bold(),
+            )));
+            for card in cards {
+                lines.push(render_card_line(card, tag));
+            }
+            lines.push(Line::from(""));
+        }
+    }
+
+    if deck.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  Your deck is empty.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(Span::styled(
+        "  [Esc] Close",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let block = Block::default()
+        .title(" 🃏 CARDS & DECK ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Rgb(15, 15, 25)));
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn render_card_line<'a>(card: &'a CardView, type_tag: &'a str) -> Line<'a> {
