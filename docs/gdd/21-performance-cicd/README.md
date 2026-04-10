@@ -94,7 +94,7 @@ Minimize inference calls, maximize their value.
 - **Pre-compute context**: While player reads/types, background thread compresses world state for next call
 - **Cache evaluations**: Law compliance checks cached if law hasn't changed
 - **Streaming output**: Token-by-token rendering via crossbeam channel → typewriter effect hides latency
-- **KV-cache**: mistral.rs manages KV-cache automatically between calls
+- **KV-cache**: ort (ONNX Runtime) manages KV-cache automatically between calls
 - **Simulation is pure Rust**: Economy, demographics, social graph — all sub-millisecond per tick
 
 ### Async Thread Architecture
@@ -103,7 +103,7 @@ Minimize inference calls, maximize their value.
 |--------|---------------|-----------|
 | UI | Ratatui render loop (60fps) | crossterm event loop |
 | Game | ECS tick, simulation systems | bevy_ecs schedule |
-| AI | mistral.rs inference (non-blocking) | tokio async |
+| AI | ort (ONNX Runtime) inference (non-blocking) | tokio async |
 | IO | RocksDB reads/writes | crossbeam channels |
 | Audio | cpal mic/TTS (if enabled) | cpal callbacks |
 
@@ -130,7 +130,7 @@ crossterm = "0.28"
 rat-widget = "2.5"                  # extended widgets for overlays
 
 # AI Inference
-mistralrs = "0.4"                   # Gemma inference with tool calling
+ort = "0.4"                   # Gemma inference with tool calling
 
 # Database
 rust-rocksdb = "0.46"               # zaidoon1 fork, most maintained
@@ -166,9 +166,9 @@ criterion = "0.5"
 [features]
 default = []
 audio = ["cpal", "whisper-rs", "hound", "rubato"]
-gpu-cuda = ["mistralrs/cuda"]
-gpu-metal = ["mistralrs/metal"]
-gpu-vulkan = ["mistralrs/vulkan"]
+gpu-cuda = ["ort/cuda"]
+gpu-metal = ["ort/metal"]
+gpu-vulkan = ["ort/vulkan"]
 sim = []  # headless simulation test mode
 ```
 

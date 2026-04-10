@@ -41,13 +41,13 @@ tracing-subscriber = "0.3"
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
 
-# HTTP (data pipeline)
-reqwest = { version = "0.12", features = ["json"], optional = true }
+# AI Inference (ONNX Runtime)
+ort = { version = "2.0.0-rc.9", features = ["load-dynamic"] }
+tokenizers = "0.21"
+hf-hub = "0.4"
 
-# Audio (optional)
-# cpal = { version = "0.15", optional = true }
-# whisper-rs = { version = "0.12", optional = true }
-# hound = { version = "3.5", optional = true }
+# HTTP
+reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
 
 [dependencies.tempfile]
 version = "3"

@@ -178,7 +178,7 @@ fn handle_player_input(state: &mut GameState, ch: &GameChannels, text: &str) {
     // Echo player input
     ch.send(UiMessage::Narrate(format!("> {}", text)));
 
-    // Mock AI response (Phase 2 will route through mistral.rs)
+    // Mock AI response (will route through ONNX provider when model loaded)
     ch.send(UiMessage::Narrate(
         "The room considers your words carefully. (AI responses coming in Phase 2)".into()
     ));

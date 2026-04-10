@@ -38,7 +38,7 @@ POLIT uses a **bevy_ecs** (v0.18, standalone — no full Bevy renderer needed) E
 │                     │                                    │
 │  ┌──────────────────┴───────────────────┐               │
 │  │         AI Harness (Gemma)           │               │
-│  │  mistral.rs inference · Tool router  │               │
+│  │  ort (ONNX Runtime) inference · Tool router  │               │
 │  │  GBNF grammar · Context builder      │               │
 │  └──────────────────┬───────────────────┘               │
 │                     │                                    │
@@ -122,7 +122,7 @@ polit/
 │  │  ├─ corporate.rs          Corporate reaction system
 │  │  └─ meta.rs               Cross-run progression
 │  ├─ ai/                      Gemma 4 harness
-│  │  ├─ harness.rs            mistral.rs inference wrapper
+│  │  ├─ harness.rs            ort (ONNX Runtime) inference wrapper
 │  │  ├─ context_builder.rs    World state → prompt
 │  │  ├─ tool_router.rs        Parse AI tool calls → ECS commands
 │  │  ├─ custom_action.rs      Freeform action pipeline
@@ -187,7 +187,7 @@ polit/
 |--------|---------------|-----------|
 | UI | Ratatui render loop (60fps) | crossterm event loop |
 | Game | ECS tick, simulation systems | bevy_ecs schedule |
-| AI | mistral.rs inference (non-blocking) | tokio async |
+| AI | ort (ONNX Runtime) inference (non-blocking) | tokio async |
 | IO | RocksDB reads/writes | crossbeam channels |
 | Audio | CPAL mic input / TTS output | cpal callbacks |
 

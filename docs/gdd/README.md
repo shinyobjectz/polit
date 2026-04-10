@@ -20,7 +20,7 @@ A CLI-based political RPG built with Ratatui/Crossterm in Rust, powered by a loc
 | 01 | [Core Architecture](01-core-architecture/README.md) | `01-core-architecture/` | ECS engine, event bus, persistence, project structure |
 | 02 | [Game Loop](02-game-loop/README.md) | `02-game-loop/` | Turn structure, phases, action points, dice system |
 | 03 | [Deckbuilder](03-deckbuilder/README.md) | `03-deckbuilder/` | Card taxonomy, combos, coherence, meta-progression |
-| 04 | [AI Harness](04-ai-harness/README.md) | `04-ai-harness/` | Gemma via mistral.rs, tool suite, GBNF grammar, context management |
+| 04 | [AI Harness](04-ai-harness/README.md) | `04-ai-harness/` | Gemma via ort (ONNX Runtime), tool suite, GBNF grammar, context management |
 | 05 | [Economic Simulation](05-economic-simulation/README.md) | `05-economic-simulation/` | Layered macro model, policy causality, tick pipeline |
 | 06 | [NPC & Social Graph](06-npc-social-graph/README.md) | `06-npc-social-graph/` | Character entities, petgraph network, propagation, lifecycles |
 | 07 | [Law Engine](07-law-engine/README.md) | `07-law-engine/` | Legislative process, enforcement types, constitutional system |
@@ -44,7 +44,7 @@ A CLI-based political RPG built with Ratatui/Crossterm in Rust, powered by a loc
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Engine | bevy_ecs (no renderer) + plugin elements | Composable systems, parallelism, moddability |
-| AI | Gemma 12B-it via mistral.rs (local GGUF) | Privacy, offline play, built-in tool calling, grammar-constrained output |
+| AI | Gemma 12B-it via ort (ONNX Runtime) (local GGUF) | Privacy, offline play, built-in tool calling, grammar-constrained output |
 | Database | RocksDB | Embedded, fast, column families per domain, snapshots for saves |
 | UI Framework | Ratatui + Crossterm | Mature Rust TUI, cross-platform, sufficient for chat-forward design |
 | Scripting | Rhai | Lightweight, sandboxed, Rust-native, good for moddable game logic |

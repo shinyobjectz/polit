@@ -36,7 +36,7 @@ blocks: [10, 13]
 │         └────────────────┼──────┘         │             │
 │                          ▼                              │
 │  ┌─────────────────────────────────────────────────┐   │
-│  │              mistral.rs                           │   │
+│  │              ort (ONNX Runtime)                           │   │
 │  │                                                   │   │
 │  │  Model: Gemma 12B-it GGUF Q4_K_M (recommended)  │   │
 │  │  Tool calling: OpenAI-compatible format           │   │
@@ -48,16 +48,16 @@ blocks: [10, 13]
 │  ┌───────────────────────▼─────────────────────────┐   │
 │  │              Tool Router                          │   │
 │  │  Parses tool calls → ECS commands                │   │
-│  │  JSON parsing trivial — mistral.rs guarantees    │   │
+│  │  JSON parsing trivial — ort (ONNX Runtime) guarantees    │   │
 │  │  valid output via grammar-constrained decoding   │   │
 │  └─────────────────────────────────────────────────┘   │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Why mistral.rs (not raw Candle or llama.cpp)
+## Why ort (ONNX Runtime) (not raw Candle or llama.cpp)
 
-| Feature | Candle | llama-cpp-2 | mistral.rs |
+| Feature | Candle | llama-cpp-2 | ort (ONNX Runtime) |
 |---------|--------|-------------|------------|
 | Gemma support | Flaky, open issues | Via GGUF (when supported) | Full native support |
 | Tool calling | DIY | Via GBNF grammar (manual) | Built-in, OpenAI-compatible |
@@ -67,7 +67,7 @@ blocks: [10, 13]
 | Embeddable | Tensor library (low-level) | C++ bindings | High-level Rust API |
 | KV-cache | Basic | Managed | Managed automatically |
 
-**mistral.rs eliminates the need to build**: tool call parser, JSON validator, KV-cache manager, constrained decoder. The `ai/harness.rs` module goes from ~2000 lines of custom inference code to ~200 lines of API calls.
+**ort (ONNX Runtime) eliminates the need to build**: tool call parser, JSON validator, KV-cache manager, constrained decoder. The `ai/harness.rs` module goes from ~2000 lines of custom inference code to ~200 lines of API calls.
 
 ## Inference Pipeline
 
@@ -79,18 +79,18 @@ Audio is always converted to text before reaching the LLM. Speech analysis for g
 
 ### Text Processing Path
 ```
-Context Builder → system prompt + user text → mistral.rs → tool call JSON → Tool Router → ECS commands
+Context Builder → system prompt + user text → ort (ONNX Runtime) → tool call JSON → Tool Router → ECS commands
 ```
 
 ### Streaming Output
 ```
-mistral.rs generates tokens → streamed to UI thread via crossbeam channel → 
+ort (ONNX Runtime) generates tokens → streamed to UI thread via crossbeam channel → 
 Ratatui renders typewriter effect → hides inference latency
 ```
 
 ## DM Tool Suite
 
-The AI dungeon master affects the game world through structured tool calls. mistral.rs uses OpenAI-compatible tool calling format with GBNF grammar constraints to guarantee valid JSON.
+The AI dungeon master affects the game world through structured tool calls. ort (ONNX Runtime) uses OpenAI-compatible tool calling format with GBNF grammar constraints to guarantee valid JSON.
 
 | Tool | Purpose |
 |------|---------|
@@ -112,7 +112,7 @@ The AI dungeon master affects the game world through structured tool calls. mist
 
 ### GBNF Grammar for Tool Calls
 
-mistral.rs supports GBNF (GGML BNF) grammar to constrain output. We define a grammar that only allows valid tool call JSON matching our schema. This eliminates malformed tool calls entirely — no retry logic needed.
+ort (ONNX Runtime) supports GBNF (GGML BNF) grammar to constrain output. We define a grammar that only allows valid tool call JSON matching our schema. This eliminates malformed tool calls entirely — no retry logic needed.
 
 ```
 root   ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws "{" ws args ws "}" ws "}"
@@ -163,7 +163,7 @@ With 128K context available on Gemma 12B+, we can afford much richer context tha
 - Full NPC memories stored in RocksDB, retrieved on-demand when NPC enters scene
 - World state compressed by a dedicated summarizer pass (can itself be an LLM call during downtime)
 - Conversation history sliding window with summary of older exchanges
-- KV-cache managed automatically by mistral.rs between calls
+- KV-cache managed automatically by ort (ONNX Runtime) between calls
 
 ## Model Selection
 

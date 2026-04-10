@@ -13,7 +13,7 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 | [Core Architecture](docs/gdd/01-core-architecture/README.md) | `01-core-architecture/` | bevy_ecs, event bus, RocksDB column families, project structure, async threads |
 | [Game Loop](docs/gdd/02-game-loop/README.md) | `02-game-loop/` | Dawn/Action/Event/Dusk phases, AP economy, D20 dice, phase state machine |
 | [Deckbuilder](docs/gdd/03-deckbuilder/README.md) | `03-deckbuilder/` | Tactic/Asset/Position cards, flip-flop coherence, card evolution, rarity |
-| [AI Harness](docs/gdd/04-ai-harness/README.md) | `04-ai-harness/` | Gemma via mistral.rs, 15 DM tools, GBNF grammar, context budget (~10k tokens), editable prompts |
+| [AI Harness](docs/gdd/04-ai-harness/README.md) | `04-ai-harness/` | Gemma via ort (ONNX Runtime), 15 DM tools, GBNF grammar, context budget (~10k tokens), editable prompts |
 | [Economic Simulation](docs/gdd/05-economic-simulation/README.md) | `05-economic-simulation/` | 4-layer model (surface→macro→demographic→geopolitical), policy causality chains |
 | [NPC & Social Graph](docs/gdd/06-npc-social-graph/README.md) | `06-npc-social-graph/` | petgraph network, Big Five personality, reputation propagation, staff system, family |
 | [Law Engine](docs/gdd/07-law-engine/README.md) | `07-law-engine/` | 5 enforcement types, legislative process, constitutional supremacy, RAG-based interpretation |
@@ -44,7 +44,7 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 ## Key Technical Decisions
 
 - **Engine**: bevy_ecs (without renderer) + plugin-style extensibility
-- **AI**: Gemma 12B-it (recommended) via mistral.rs (local GGUF inference, OpenAI-compatible tool calling, grammar-constrained JSON output)
+- **AI**: Gemma 4 E4B/E2B via ort (ONNX Runtime) with Q4 quantized ONNX models from onnx-community. Set HF_TOKEN env var for model download.
 - **Database**: RocksDB with column families per domain, snapshot-based saves
 - **UI**: Ratatui + Crossterm, chat-forward with floating overlays
 - **Scripting**: Rhai (sandboxed, for moddable game logic)

@@ -26,7 +26,7 @@ Audio input is always a **two-stage pipeline**: speech-to-text via whisper-rs, t
 - Press `[v]` to record, `Enter` to send
 - Works in any phase — free roam, conversation, speech, debate, anything with text input
 - **whisper-rs** (Whisper.cpp Rust bindings) performs speech-to-text locally
-- Transcribed text sent to mistral.rs as normal text input
+- Transcribed text sent to ort (ONNX Runtime) as normal text input
 - **Never required** — typing always works identically
 
 ### Speech Gameplay Bonuses
@@ -35,7 +35,7 @@ For speech/debate minigames, the system provides delivery bonuses through a simp
 
 - **Duration**: Short responses vs. long speeches — affects different mechanics differently
 - **Keyword density**: whisper-rs transcription analyzed for policy terms, emotional language, attacks
-- **The LLM judges quality**: mistral.rs receives the transcribed text with a prompt to evaluate delivery and content, then sets roll modifiers accordingly
+- **The LLM judges quality**: ort (ONNX Runtime) receives the transcribed text with a prompt to evaluate delivery and content, then sets roll modifiers accordingly
 
 This is NOT raw audio tone analysis. The bonuses come from the LLM's assessment of the transcribed content:
 
