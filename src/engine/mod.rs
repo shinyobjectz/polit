@@ -30,6 +30,11 @@ pub struct GameState {
     pub active_npc: Option<String>,
     /// Queue of simulation events to flush during Dawn Phase
     pub event_queue: crate::systems::sim_events::SimEventQueue,
+    /// Narrative seeds from the latest simulation tick (for DM context)
+    pub latest_narrative_seeds: Vec<String>,
+    /// PyO3 simulation bridge (only available with `simulation` feature)
+    #[cfg(feature = "simulation")]
+    pub sim_bridge: Option<crate::systems::sim_bridge::SimBridge>,
 }
 
 /// Current phase of the game loop
@@ -93,6 +98,9 @@ impl GameState {
             economy: crate::systems::economy::EconomyState::default(),
             active_npc: None,
             event_queue: crate::systems::sim_events::SimEventQueue::new(),
+            latest_narrative_seeds: Vec::new(),
+            #[cfg(feature = "simulation")]
+            sim_bridge: crate::systems::sim_bridge::SimBridge::new().ok(),
         })
     }
 
@@ -127,6 +135,9 @@ impl GameState {
             economy: crate::systems::economy::EconomyState::default(),
             active_npc: None,
             event_queue: crate::systems::sim_events::SimEventQueue::new(),
+            latest_narrative_seeds: Vec::new(),
+            #[cfg(feature = "simulation")]
+            sim_bridge: crate::systems::sim_bridge::SimBridge::new().ok(),
         })
     }
 

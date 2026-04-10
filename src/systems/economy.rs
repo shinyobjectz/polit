@@ -123,6 +123,20 @@ impl EconomyState {
         self.approval_on_economy = self.approval_on_economy.clamp(0.0, 100.0);
     }
 
+    /// Apply a simulation delta from the Python bridge
+    pub fn apply_delta(&mut self, delta: &crate::systems::world_delta::WorldStateDelta) {
+        self.gdp_growth += delta.gdp_growth_delta;
+        self.unemployment += delta.unemployment_delta;
+        self.inflation += delta.inflation_delta;
+        self.consumer_confidence += delta.consumer_confidence_delta;
+        // Clamp to reasonable ranges
+        self.unemployment = self.unemployment.clamp(0.0, 0.5);
+        self.inflation = self.inflation.clamp(-0.1, 1.0);
+        self.consumer_confidence = self.consumer_confidence.clamp(0.0, 200.0);
+        // Update surface indicators after applying delta
+        self.update_surface();
+    }
+
     /// Queue a policy effect with lag
     pub fn queue_effect(
         &mut self,

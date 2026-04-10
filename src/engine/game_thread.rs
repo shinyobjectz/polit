@@ -159,7 +159,42 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
     }
 
     // Tick the economy simulation
-    state.economy.tick();
+    // When simulation feature is enabled and bridge is available, use Python sim
+    #[cfg(feature = "simulation")]
+    {
+        if let Some(ref bridge) = state.sim_bridge {
+            let snapshot = crate::systems::sim_bridge::WorldStateSnapshot {
+                week: state.week,
+                macro_state: crate::systems::sim_bridge::MacroSnapshot {
+                    gdp_growth: state.economy.gdp_growth,
+                    inflation: state.economy.inflation,
+                    unemployment: state.economy.unemployment,
+                    fed_funds_rate: state.economy.federal_funds_rate,
+                    consumer_confidence: state.economy.consumer_confidence,
+                    debt_to_gdp: state.economy.national_debt_gdp,
+                },
+                counties: Default::default(),
+            };
+            let events = state.event_queue.flush();
+            match bridge.tick(&snapshot, &events) {
+                Ok(delta) => {
+                    state.economy.apply_delta(&delta);
+                    state.latest_narrative_seeds = delta.narrative_seeds;
+                }
+                Err(e) => {
+                    eprintln!("Simulation tick failed: {e}");
+                    state.economy.tick();
+                }
+            }
+        } else {
+            state.economy.tick();
+        }
+    }
+
+    #[cfg(not(feature = "simulation"))]
+    {
+        state.economy.tick();
+    }
 
     ch.send(UiMessage::PhaseHeader(format!(
         "Week {}, {} Begins",
@@ -179,7 +214,7 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
     );
     ch.send(UiMessage::Narrate("■ MORNING BRIEFING".into()));
     ch.send(UiMessage::Narrate(response.narration));
-    for tool in &response.executed_tools {
+    for tool in &response.tool_calls {
         process_tool_calls(state, ch, &[tool.clone()]);
     }
 
@@ -638,6 +673,10 @@ fn process_tool_calls(state: &mut GameState, ch: &GameChannels, calls: &[ToolCal
                 )));
                 // TODO: render actual widget inline once chat supports it
             }
+            // Character creation tools — handled by UI, not game engine
+            ToolCall::LockField { .. }
+            | ToolCall::SuggestOptions { .. }
+            | ToolCall::AskQuestion { .. } => {}
         }
     }
 }
