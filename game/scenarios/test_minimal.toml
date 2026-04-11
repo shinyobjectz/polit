@@ -1,0 +1,38 @@
+[scenario]
+name = "Test Scenario"
+description = "A minimal test scenario"
+era = "modern"
+year = 2024
+
+[macro]
+gdp_growth = 0.025
+inflation = 0.031
+unemployment = 0.037
+fed_funds_rate = 0.0525
+consumer_confidence = 102.0
+debt_to_gdp = 1.23
+
+[counties]
+source = "fallback"
+states = []
+
+[geopolitical.overrides]
+
+[geopolitical.overrides.China]
+alignment = -0.5
+
+[geopolitical.overrides.Russia]
+alignment = -0.7
+stability = 40
+
+[[events.scheduled]]
+week = 5
+type = "FiscalBill"
+bill_type = "spending"
+amount_gdp_pct = 0.02
+
+[[events.scheduled]]
+week = 10
+type = "SectorShock"
+sector = "Energy"
+severity = 2.0
