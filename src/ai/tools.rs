@@ -82,6 +82,23 @@ pub enum ToolCall {
         title: Option<String>,
         data: serde_json::Value,
     },
+
+    // --- Character creation tools ---
+    /// Lock a character field to a value
+    #[serde(rename = "lock_field")]
+    LockField { field: String, value: String },
+
+    /// Suggest options for a character field (player picks one)
+    #[serde(rename = "suggest_options")]
+    SuggestOptions {
+        field: String,
+        options: Vec<String>,
+        prompt: String,
+    },
+
+    /// Ask the player a specific question to develop their character
+    #[serde(rename = "ask_question")]
+    AskQuestion { topic: String, question: String },
 }
 
 /// Generic widget types the AI can render inline
@@ -117,14 +134,33 @@ pub struct DmResponse {
 
 /// GBNF grammar for constraining model output to valid tool call JSON.
 /// This is the grammar string for constraining ONNX model output via structured decoding.
+/// GBNF grammar for game mode — all tools available
 pub const TOOL_CALL_GBNF: &str = r#"
 root ::= "{" ws "\"narration\"" ws ":" ws string ws "," ws "\"tool_calls\"" ws ":" ws "[" ws tool-list ws "]" ws "}"
 tool-list ::= "" | tool ("," ws tool)*
 tool ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws "{" ws args ws "}" ws "}"
-tool-name ::= "\"narrate\"" | "\"spawn_npc\"" | "\"set_dc\"" | "\"trigger_event\"" | "\"modify_rel\"" | "\"update_var\"" | "\"grant_card\"" | "\"revoke_card\"" | "\"set_mood\"" | "\"roll_dice\"" | "\"schedule_event\"" | "\"score_adjust\""
+tool-name ::= "\"narrate\"" | "\"spawn_npc\"" | "\"set_dc\"" | "\"trigger_event\"" | "\"modify_rel\"" | "\"update_var\"" | "\"grant_card\"" | "\"revoke_card\"" | "\"set_mood\"" | "\"roll_dice\"" | "\"schedule_event\"" | "\"score_adjust\"" | "\"lock_field\"" | "\"suggest_options\"" | "\"ask_question\""
 args ::= arg ("," ws arg)*
 arg ::= string ws ":" ws value
-value ::= string | number | "true" | "false" | "null"
+value ::= string | number | "true" | "false" | "null" | arr
+arr ::= "[" ws arr-list ws "]"
+arr-list ::= "" | value ("," ws value)*
+string ::= "\"" ([^"\\] | "\\" .)* "\""
+number ::= "-"? [0-9]+ ("." [0-9]+)?
+ws ::= [ \t\n]*
+"#;
+
+/// GBNF grammar for character creation — only creation tools
+pub const CREATION_GBNF: &str = r#"
+root ::= "{" ws "\"narration\"" ws ":" ws string ws "," ws "\"tool_calls\"" ws ":" ws "[" ws tool-list ws "]" ws "}"
+tool-list ::= "" | tool ("," ws tool)*
+tool ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws "{" ws args ws "}" ws "}"
+tool-name ::= "\"narrate\"" | "\"lock_field\"" | "\"suggest_options\"" | "\"ask_question\""
+args ::= arg ("," ws arg)*
+arg ::= string ws ":" ws value
+value ::= string | number | "true" | "false" | "null" | arr
+arr ::= "[" ws arr-list ws "]"
+arr-list ::= "" | value ("," ws value)*
 string ::= "\"" ([^"\\] | "\\" .)* "\""
 number ::= "-"? [0-9]+ ("." [0-9]+)?
 ws ::= [ \t\n]*

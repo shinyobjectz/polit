@@ -110,7 +110,7 @@ def test_fiscal_stimulus_spending():
     layer = MacroEconomyLayer()
     world = _equilibrium_world()
 
-    stimulus = [{"type": "FiscalBill", "spending_gdp_pct": 0.03, "tax_cut_gdp_pct": 0.0}]
+    stimulus = [{"type": "FiscalBill", "bill_type": "spending", "amount_gdp_pct": 0.03}]
 
     # Run a few ticks to let the impulse phase in
     cumulative_gdp = 0.0
@@ -155,7 +155,7 @@ def test_tariff_stagflation():
     layer = MacroEconomyLayer()
     world = _equilibrium_world()
 
-    tariff = [{"type": "Tariff", "tariff_pct": 0.10}]
+    tariff = [{"type": "Tariff", "rate": 0.10}]
 
     cumulative_gdp = 0.0
     cumulative_infl = 0.0
@@ -176,7 +176,7 @@ def test_multiple_consecutive_shocks_accumulate():
     world = _equilibrium_world()
 
     # Three consecutive spending bills
-    bill = [{"type": "FiscalBill", "spending_gdp_pct": 0.02, "tax_cut_gdp_pct": 0.0}]
+    bill = [{"type": "FiscalBill", "bill_type": "spending", "amount_gdp_pct": 0.02}]
 
     cumulative_gdp = 0.0
     for i in range(13):
@@ -240,7 +240,7 @@ def test_narrative_seeds_generated():
     layer = MacroEconomyLayer()
     world = _equilibrium_world()
 
-    big_shock = [{"type": "FiscalBill", "spending_gdp_pct": 0.10, "tax_cut_gdp_pct": 0.0}]
+    big_shock = [{"type": "FiscalBill", "bill_type": "spending", "amount_gdp_pct": 0.10}]
     delta = _default_delta()
     delta = layer.step(world, big_shock, delta)
 
@@ -261,7 +261,7 @@ def test_serde_tagged_event_normalised():
     world = _equilibrium_world()
 
     # Serde-tagged format: {"FiscalBill": {"spending_gdp_pct": 0.03, ...}}
-    tagged = [{"FiscalBill": {"spending_gdp_pct": 0.03, "tax_cut_gdp_pct": 0.0}}]
+    tagged = [{"FiscalBill": {"bill_type": "spending", "amount_gdp_pct": 0.03}}]
 
     cumulative_gdp = 0.0
     for i in range(13):

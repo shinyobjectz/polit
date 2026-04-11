@@ -45,15 +45,15 @@ impl Default for GameContext {
 }
 
 impl GameContext {
-    /// Build the full prompt for the AI model
+    /// Build the full prompt for the AI model using Gemma 4 native format
     pub fn build_prompt(&self, player_input: &str, mode: DmMode) -> String {
         let system = self.build_system_prompt(mode);
         let context = self.build_context_block();
+        let full_system = format!("{}\n\n{}", system, context);
+        let tools = super::native_format::tool_declarations(mode);
+        let player_msg = format!("Player says: {}", player_input);
 
-        format!(
-            "<start_of_turn>user\n{}\n\n{}\n\nPlayer says: {}<end_of_turn>\n<start_of_turn>model\n",
-            system, context, player_input
-        )
+        super::native_format::build_prompt(&full_system, &tools, &[], &player_msg)
     }
 
     fn build_system_prompt(&self, mode: DmMode) -> String {
@@ -79,6 +79,13 @@ impl GameContext {
                 "You are a legal analyst in a political simulation. Evaluate whether proposed actions \
                  comply with active laws. Convert player intentions into legal language. Flag \
                  constitutional issues. Use narrate() for legal analysis."
+            }
+            DmMode::CharacterCreation => {
+                "You are collaboratively building a character with the player. \
+                 Use lock_field() to record character details the player reveals. \
+                 Use ask_question() to explore new character aspects. \
+                 Use suggest_options() to offer choices. Do NOT describe physical \
+                 locations or set scenes. Stay conversational. 2-4 sentences."
             }
         };
 
@@ -194,11 +201,12 @@ mod tests {
 
     #[test]
     fn test_prompt_token_budget() {
-        // Ensure default prompt stays under ~2000 chars (roughly <500 tokens)
+        // Ensure default prompt stays under ~6000 chars (roughly <1500 tokens)
+        // Native format with tool declarations is larger than old JSON format
         let ctx = GameContext::default();
         let prompt = ctx.build_prompt("test input", DmMode::Narrator);
         assert!(
-            prompt.len() < 3000,
+            prompt.len() < 6000,
             "Prompt too long: {} chars",
             prompt.len()
         );

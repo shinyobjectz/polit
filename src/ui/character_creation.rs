@@ -1,13 +1,15 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use std::collections::HashMap;
 
 use super::chat::{ChatStream, NpcAvatar};
 use super::music::MusicController;
 use super::theme;
+use crate::ai::agent::Agent;
 use crate::ai::async_chat::{AiResponse, AsyncAiChat};
 use crate::ai::context::GameContext;
+use crate::ai::tools::ToolCall;
 use crate::ai::{AiProvider, DmMode};
 
 /// Character data built up during creation
@@ -26,7 +28,7 @@ impl CharacterData {
     }
 
     pub fn depth_percent(&self) -> u32 {
-        let total_fields = 10; // name, background, archetype, office, party, traits, family, motivation, rival, secret
+        let total_fields = 11; // name, background, archetype, office, party, traits, family, motivation, rival, secret, tone
         let filled = self.fields.len() as u32;
         ((filled as f32 / total_fields as f32) * 100.0).min(100.0) as u32
     }
@@ -60,6 +62,7 @@ impl CharacterData {
             "Motivation",
             "Rival",
             "Secret",
+            "Tone",
         ];
         keys.iter()
             .map(|k| {
@@ -154,27 +157,11 @@ pub struct CharacterCreationScreen {
     thinking_start: std::time::Instant,
     creation_complete: bool,
     dm_question_count: u32,
+    show_sheet: bool, // Tab toggles character sheet overlay
 }
 
-const SYSTEM_PROMPT: &str = r#"You are the Narrator for POLIT, an American politics simulator. You are having a natural conversation to help the player discover who their character is.
-
-CRITICAL: Do NOT assume anything about the character. Do NOT place them in a city, office, political role, or any specific situation. The player decides everything. You are here to ASK, LISTEN, and EXPLORE — not to tell them who they are.
-
-The character could be anyone: a small-town mayor, a federal agent, a lobbyist, a military officer, a congressional staffer, a state governor, or something completely unexpected. Let the player lead.
-
-You are a creative collaborator. Let the conversation flow naturally. Follow the player's energy. If they give you a thread, pull on it.
-
-Be curious. Be specific. Offer vivid details and let them react. Paint scenes from their character's past. Ask "what if" questions. Suggest connections they haven't thought of.
-
-Keep responses to 2-4 sentences. Every response should either reveal something new about the character or deepen something already established.
-
-Things that should emerge naturally through conversation (don't force them):
-- Who they are and what they've done with their life
-- What draws them to public life, power, or service
-- Their greatest strength and the flaw that could undo them
-- The people who matter to them — allies, family, rivals
-
-When you feel the character is rich enough, say "Your story is ready. Shall we begin?""#;
+/// Tone instructions for character creation (passed as context.tone_instructions)
+const CREATION_TONE: &str = "Sharp, funny, vivid. Like a comedy writer helping someone build a character. Match their energy — weird gets weirder, serious gets deeper. Never generic, never robotic.";
 
 impl CharacterCreationScreen {
     pub fn new() -> Self {
@@ -199,6 +186,7 @@ impl CharacterCreationScreen {
             thinking_start: std::time::Instant::now(),
             creation_complete: false,
             dm_question_count: 0,
+            show_sheet: false,
         }
     }
 
@@ -208,8 +196,10 @@ impl CharacterCreationScreen {
         provider: Box<dyn AiProvider>,
         music: &MusicController,
     ) -> Result<Option<CharacterData>, Box<dyn std::error::Error>> {
-        // Spawn async AI thread
-        let mut async_ai = AsyncAiChat::new(provider);
+        // Spawn async AI thread with an Agent in CharacterCreation mode.
+        // The agent owns conversation memory so history accumulates automatically.
+        let agent = Agent::new(DmMode::CharacterCreation);
+        let mut async_ai = AsyncAiChat::with_agent(provider, agent);
 
         loop {
             match self.phase {
@@ -225,17 +215,16 @@ impl CharacterCreationScreen {
                         self.character
                             .set("avatar_color", &format!("{:?}", avatar_color));
 
-                        // Request AI greeting asynchronously
-                        let ctx = GameContext {
-                            tone_instructions: SYSTEM_PROMPT.to_string(),
-                            player_name: full_name.clone(),
-                            ..GameContext::default()
-                        };
-                        let prompt = ctx.build_prompt(
-                            &format!("The player's name is {}. Greet them and ask who they are — what's their story? Don't assume anything about their career, role, or where they are in life. Let them tell you. 2-3 sentences.", full_name),
-                            DmMode::Conversation,
+                        // Request AI greeting via the agent (with memory + tools)
+                        let ctx = self.build_creation_context();
+                        async_ai.request_agent_turn(
+                            &format!(
+                                "My character's name is {}. Let's figure out who they are.",
+                                full_name
+                            ),
+                            ctx,
+                            DmMode::CharacterCreation,
                         );
-                        async_ai.request_generation(&prompt, DmMode::Conversation);
                         self.thinking = true;
                         self.thinking_start = std::time::Instant::now();
                         self.dm_question_count = 1;
@@ -251,21 +240,70 @@ impl CharacterCreationScreen {
                     // Poll for AI responses (non-blocking)
                     if self.thinking {
                         self.thinking_dots = ((self.frame_count / 10) % 4) as u8;
-                        if let Some(resp) = async_ai.poll_response() {
+                        // Drain all available responses (steps + final)
+                        while let Some(resp) = async_ai.poll_response() {
                             match resp {
+                                AiResponse::Step(step) => {
+                                    use crate::ai::async_chat::AgentStep;
+                                    match step {
+                                        AgentStep::Thinking(thought) => {
+                                            // Show thinking as dimmed line
+                                            let short = if thought.len() > 80 {
+                                                format!("{}...", &thought[..77])
+                                            } else {
+                                                thought
+                                            };
+                                            self.chat.add_system(&format!("  ◇ {}", short));
+                                        }
+                                        AgentStep::ToolExecuted(tool_desc) => {
+                                            self.chat.add_system(&format!("  ✓ {}", tool_desc));
+                                        }
+                                        AgentStep::Generating(iter) => {
+                                            if iter > 1 {
+                                                self.chat.add_system(&format!("  ↻ retry {}", iter));
+                                            }
+                                        }
+                                    }
+                                }
+                                AiResponse::AgentDone(agent_resp) => {
+                                    self.thinking = false;
+
+                                    // Process tool calls from the agent
+                                    self.process_agent_tools(&agent_resp.tool_calls);
+
+                                    // Show narration in chat
+                                    if !agent_resp.narration.is_empty() {
+                                        self.chat.add_npc(
+                                            "Narrator",
+                                            &agent_resp.narration,
+                                            Some(NpcAvatar {
+                                                face: "✦✦".to_string(),
+                                                color: theme::ACCENT,
+                                                name: "Narrator".to_string(),
+                                            }),
+                                        );
+                                    }
+
+                                    tracing::info!(
+                                        "Agent: {} iterations, {} tools, depth={}%",
+                                        agent_resp.iterations,
+                                        agent_resp.tool_calls.len(),
+                                        self.character.depth_percent()
+                                    );
+                                }
                                 AiResponse::Done(dm_resp) => {
                                     self.thinking = false;
-                                    let narration = dm_resp.narration.clone();
-                                    self.parse_and_lock_fields("", &narration);
-                                    self.chat.add_npc(
-                                        "Narrator",
-                                        &narration,
-                                        Some(NpcAvatar {
-                                            face: "✦✦".to_string(),
-                                            color: theme::ACCENT,
-                                            name: "Narrator".to_string(),
-                                        }),
-                                    );
+                                    if !dm_resp.narration.is_empty() {
+                                        self.chat.add_npc(
+                                            "Narrator",
+                                            &dm_resp.narration,
+                                            Some(NpcAvatar {
+                                                face: "✦✦".to_string(),
+                                                color: theme::ACCENT,
+                                                name: "Narrator".to_string(),
+                                            }),
+                                        );
+                                    }
                                 }
                                 AiResponse::Error(e) => {
                                     self.thinking = false;
@@ -281,6 +319,80 @@ impl CharacterCreationScreen {
                     self.handle_chat_input(&mut async_ai, music)?;
                 }
             }
+        }
+    }
+
+    /// Build a GameContext for character creation (no game state, just player info)
+    fn build_creation_context(&self) -> GameContext {
+        let char_summary = self
+            .character
+            .fields
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        GameContext {
+            tone_instructions: CREATION_TONE.to_string(),
+            player_name: self
+                .character
+                .get("name")
+                .unwrap_or("Player")
+                .to_string(),
+            player_office: if char_summary.is_empty() {
+                "Unknown — being created".into()
+            } else {
+                format!("Creating character: [{}]", char_summary)
+            },
+            phase: "Character Creation".into(),
+            ..GameContext::default()
+        }
+    }
+
+    /// Process tool calls from the agent response
+    fn process_agent_tools(&mut self, tools: &[ToolCall]) {
+        for tool in tools {
+            match tool {
+                ToolCall::LockField { field, value } => {
+                    tracing::info!("Locking field: {} = {}", field, value);
+                    self.character.set(field, value);
+                    self.chat.add_system(&format!("✓ {} set", field));
+                }
+                ToolCall::SuggestOptions {
+                    field,
+                    options,
+                    prompt,
+                } => {
+                    // Show options to player in chat
+                    let opts_text = options
+                        .iter()
+                        .enumerate()
+                        .map(|(i, o)| format!("  {}. {}", i + 1, o))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    self.chat
+                        .add_system(&format!("{}\n{}", prompt, opts_text));
+                }
+                ToolCall::AskQuestion { topic, question } => {
+                    // The question is typically embedded in the narration,
+                    // but log it for debugging
+                    tracing::info!("Agent asking about {}: {}", topic, question);
+                }
+                _ => {
+                    tracing::warn!("Unexpected tool in character creation: {:?}", tool);
+                }
+            }
+        }
+
+        // Check if character is complete enough
+        let dm_lower = self
+            .chat
+            .messages
+            .last()
+            .map(|m| m.text.to_lowercase())
+            .unwrap_or_default();
+        if dm_lower.contains("shall we begin") || dm_lower.contains("story is ready") {
+            self.creation_complete = true;
         }
     }
 
@@ -707,76 +819,8 @@ impl CharacterCreationScreen {
         Ok(false)
     }
 
-    fn parse_and_lock_fields(&mut self, user_input: &str, dm_response: &str) {
-        let input_lower = user_input.to_lowercase();
-        let q = self.dm_question_count;
-
-        // Simple heuristic: based on question order, lock the field
-        match q {
-            1 => {
-                // First answer is the name
-                let name = user_input
-                    .split_whitespace()
-                    .filter(|w| w.len() > 1)
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if !name.is_empty() {
-                    self.character.set("name", &name);
-                }
-            }
-            2 => {
-                self.character.set("background", user_input.trim());
-            }
-            3 => {
-                // Archetype detection
-                for archetype in &[
-                    "idealist",
-                    "machine",
-                    "outsider",
-                    "dealmaker",
-                    "prosecutor",
-                    "activist",
-                    "veteran",
-                    "mogul",
-                ] {
-                    if input_lower.contains(archetype) {
-                        let capitalized =
-                            format!("The {}{}", archetype[..1].to_uppercase(), &archetype[1..]);
-                        self.character.set("archetype", &capitalized);
-                        break;
-                    }
-                }
-                if !self.character.fields.contains_key("archetype") {
-                    self.character.set("archetype", user_input.trim());
-                }
-            }
-            4 => {
-                self.character.set("starting_office", user_input.trim());
-            }
-            5 => {
-                self.character.set("party", user_input.trim());
-            }
-            6 => {
-                self.character.set("traits", user_input.trim());
-            }
-            7 => {
-                self.character.set("family", user_input.trim());
-            }
-            8 => {
-                self.character.set("motivation", user_input.trim());
-            }
-            _ => {}
-        }
-
-        // Check if DM says we're ready
-        let dm_lower = dm_response.to_lowercase();
-        if dm_lower.contains("let's begin")
-            || dm_lower.contains("let's begin")
-            || dm_lower.contains("shall we begin")
-        {
-            self.creation_complete = true;
-        }
-    }
+    // parse_and_lock_fields removed — the agent now uses LockField tool calls
+    // to set character data. No more heuristic guessing.
 
     fn draw(
         &mut self,
@@ -793,10 +837,10 @@ impl CharacterCreationScreen {
         let input_str = self.input.clone();
         let summary = self.character.summary_lines();
 
-        let input_lines: Vec<&str> = input_str.split('\n').collect();
-        let input_height = (input_lines.len() as u16 + 2).max(3).min(10);
+        // Use component for proper wrap-aware height
+        let input_height = super::components::input_bar::height_for(&input_str, theme::MAX_CONTENT_WIDTH);
 
-        // Thinking indicator with elapsed time
+        // Loading indicator — just dots + elapsed, no "thinking" label
         if thinking {
             if self
                 .chat
@@ -809,9 +853,9 @@ impl CharacterCreationScreen {
             }
             let elapsed = self.thinking_start.elapsed().as_secs();
             self.chat
-                .add_system(&format!("✦ thinking{} ({}s)", dots, elapsed));
+                .add_system(&format!("✦{} ({}s)", dots, elapsed));
         } else {
-            // Replace with turn summary when done
+            // Remove loading indicator when done
             if self
                 .chat
                 .messages
@@ -819,10 +863,7 @@ impl CharacterCreationScreen {
                 .map(|m| m.text.starts_with("✦"))
                 .unwrap_or(false)
             {
-                let elapsed = self.thinking_start.elapsed().as_secs();
                 self.chat.messages.pop();
-                self.chat
-                    .add_system(&format!("✦ responded in {}s", elapsed));
             }
         }
 
@@ -836,123 +877,69 @@ impl CharacterCreationScreen {
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(3),               // Chat (centered)
-                    Constraint::Length(input_height), // Input (dynamic)
-                    Constraint::Length(2),            // Footer status bar
+                    Constraint::Min(3),               // Chat
+                    Constraint::Length(input_height),  // Input
+                    Constraint::Length(1),             // Gap
+                    Constraint::Length(2),             // Footer
                 ])
                 .split(area);
 
-            // Footer status bar — FULL WIDTH
-            let depth_bar_filled = (depth as f32 / 100.0 * 20.0) as usize;
-            let depth_bar = format!(
-                "{}{}",
-                "█".repeat(depth_bar_filled),
-                "░".repeat(20 - depth_bar_filled)
+            // Footer status bar (component)
+            crate::ui::components::status_bar::render_creation(
+                frame, layout[3], depth, &depth_label, can_start,
             );
-            let header = Paragraph::new(Line::from(vec![
-                Span::styled("  🇺🇸 ", Style::default()),
-                Span::styled("POLIT", Style::default().fg(theme::FG).bold()),
-                Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
-                Span::styled("Character Creation", Style::default().fg(theme::FG)),
-                Span::styled("  │  ", Style::default().fg(theme::FG_MUTED)),
-                Span::styled(
-                    format!("{} {} {}%", depth_label, depth_bar, depth),
-                    Style::default().fg(if depth >= 30 {
-                        theme::SUCCESS
-                    } else {
-                        theme::FG_DIM
-                    }),
-                ),
-                if can_start {
-                    Span::styled("  → ready", Style::default().fg(theme::SUCCESS))
-                } else {
-                    Span::raw("")
-                },
-            ]))
-            .style(Style::default().bg(theme::BG_SUBTLE));
-            frame.render_widget(header, layout[2]); // Footer position
+
 
             // Chat — centered column (layout[0] now)
             let chat_area = theme::centered_content(layout[0]);
             frame.render_widget(chat_widget, chat_area);
 
-            // Input — floating card bar (layout[1] now)
+            // Input — floating card bar with wrapping (layout[1])
             let input_content_area = theme::centered_content(layout[1]);
-            let input_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::ACCENT_BLUE))
-                .style(Style::default().bg(theme::BG_HIGHLIGHT));
-            let inner_area = input_block.inner(input_content_area);
-            frame.render_widget(input_block, input_content_area);
+            crate::ui::components::input_bar::render(frame, input_content_area, &input_str);
 
-            let mut lines: Vec<Line> = Vec::new();
-            for (i, line) in input_lines.iter().enumerate() {
-                let mut spans = Vec::new();
-                if i == 0 {
-                    spans.push(Span::styled("▶ ", Style::default().fg(theme::ACCENT)));
-                } else {
-                    spans.push(Span::styled("  ", Style::default()));
-                }
-                spans.push(Span::styled(
-                    line.to_string(),
-                    Style::default().fg(theme::FG),
-                ));
-                if i == input_lines.len() - 1 {
-                    spans.push(Span::styled(
-                        "▊",
-                        Style::default()
-                            .fg(theme::FG_DIM)
-                            .add_modifier(Modifier::SLOW_BLINK),
-                    ));
-                }
-                lines.push(Line::from(spans));
-            }
-            frame.render_widget(Paragraph::new(lines), inner_area);
-
-            // Character sheet — floating to the right with gap
-            if !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled) {
+            // Character sheet — floating overlay on chat area (Tab to toggle)
+            let show_sheet = self.show_sheet;
+            if show_sheet && !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled) {
                 let filled_count = summary.iter().filter(|(_, _, f)| *f).count() as u16;
-                let block_height = (filled_count + 3).min(layout[1].height);
-                let block_width = 34;
-                // Position with generous gap (4 chars) from chat column
-                let block_x = chat_area.right() + 4;
-                let block_y = layout[1].y + 2;
-                // Only show if there's room to the right
-                if block_x + block_width <= area.width {
-                    let block_area = Rect::new(block_x, block_y, block_width, block_height);
+                let block_height = (filled_count + 3).min(chat_area.height);
+                let block_width = 40u16.min(area.width.saturating_sub(4));
 
-                    let summary_lines: Vec<Line> = summary
-                        .iter()
-                        .filter(|(_, _, filled)| *filled)
-                        .map(|(key, value, _)| {
-                            // Truncate long values to fit in the card
-                            let display_val = if value.len() > 20 {
-                                format!("{}…", &value[..19])
-                            } else {
-                                value.clone()
-                            };
-                            Line::from(vec![
-                                Span::styled("✓ ", Style::default().fg(theme::SUCCESS)),
-                                Span::styled(
-                                    format!("{}: ", key),
-                                    Style::default().fg(theme::FG_DIM),
-                                ),
-                                Span::styled(display_val, Style::default().fg(theme::FG)),
-                            ])
-                        })
-                        .collect();
+                // Center the sheet overlay in the chat area
+                let block_x = area.x + (area.width.saturating_sub(block_width)) / 2;
+                let block_y = chat_area.y + 1;
+                let block_area = Rect::new(block_x, block_y, block_width, block_height);
 
-                    let summary_block = Paragraph::new(summary_lines).block(
-                        Block::default()
-                            .title(" Character ")
-                            .title_style(Style::default().fg(theme::FG_DIM))
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(theme::BORDER))
-                            .style(Style::default().bg(theme::BG_SUBTLE)),
-                    );
-                    frame.render_widget(ratatui::widgets::Clear, block_area);
-                    frame.render_widget(summary_block, block_area);
-                }
+                let summary_lines: Vec<Line> = summary
+                    .iter()
+                    .filter(|(_, _, filled)| *filled)
+                    .map(|(key, value, _)| {
+                        let display_val = if value.len() > 26 {
+                            format!("{}…", &value[..25])
+                        } else {
+                            value.clone()
+                        };
+                        Line::from(vec![
+                            Span::styled("✓ ", Style::default().fg(theme::SUCCESS)),
+                            Span::styled(
+                                format!("{}: ", key),
+                                Style::default().fg(theme::FG_DIM),
+                            ),
+                            Span::styled(display_val, Style::default().fg(theme::FG)),
+                        ])
+                    })
+                    .collect();
+
+                let summary_block = Paragraph::new(summary_lines).block(
+                    Block::default()
+                        .title(" Character [Tab to close] ")
+                        .title_style(Style::default().fg(theme::FG_MUTED))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme::ACCENT_BLUE))
+                        .style(Style::default().bg(theme::BG)),
+                );
+                frame.render_widget(ratatui::widgets::Clear, block_area);
+                frame.render_widget(summary_block, block_area);
             }
         })?;
         Ok(())
@@ -969,9 +956,11 @@ impl CharacterCreationScreen {
             if let Event::Mouse(mouse) = evt {
                 match mouse.kind {
                     crossterm::event::MouseEventKind::ScrollUp => {
+                        tracing::debug!("Mouse scroll up, scroll_up={}, total={}", self.chat.scroll_up, self.chat.total_lines());
                         self.chat.scroll_up_by(3);
                     }
                     crossterm::event::MouseEventKind::ScrollDown => {
+                        tracing::debug!("Mouse scroll down, scroll_up={}", self.chat.scroll_up);
                         self.chat.scroll_down_by(3);
                     }
                     _ => {}
@@ -984,15 +973,33 @@ impl CharacterCreationScreen {
                     return Ok(());
                 }
 
-                // Don't accept input while AI is thinking
+                // Allow scroll and Ctrl+C even while thinking
+                match key.code {
+                    KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        self.creation_complete = true;
+                        return Ok(());
+                    }
+                    KeyCode::Up => {
+                        self.chat.scroll_up_by(3);
+                        return Ok(());
+                    }
+                    KeyCode::Down => {
+                        self.chat.scroll_down_by(3);
+                        return Ok(());
+                    }
+                    KeyCode::Char('R') => {
+                        self.chat.scroll_to_bottom();
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+
+                // Block text input while AI is thinking
                 if self.thinking {
                     return Ok(());
                 }
 
                 match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                        self.creation_complete = true;
-                    }
                     KeyCode::Right if self.input.is_empty() && self.character.can_start() => {
                         self.creation_complete = true;
                     }
@@ -1040,45 +1047,22 @@ impl CharacterCreationScreen {
                                 return Ok(());
                             }
 
-                            // Parse fields from user input
-                            self.parse_and_lock_fields(&input, "");
-
-                            // Request AI response asynchronously
-                            let char_context = self
-                                .character
-                                .fields
-                                .iter()
-                                .map(|(k, v)| format!("{}: {}", k, v))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            let ctx = GameContext {
-                                tone_instructions: SYSTEM_PROMPT.to_string(),
-                                player_name: self
-                                    .character
-                                    .get("name")
-                                    .unwrap_or("Player")
-                                    .to_string(),
-                                ..GameContext::default()
-                            };
-                            let full_prompt = if char_context.is_empty() {
-                                input.clone()
-                            } else {
-                                format!(
-                                    "Character so far: [{}]\n\nPlayer says: {}",
-                                    char_context, input
-                                )
-                            };
-                            let prompt = ctx.build_prompt(&full_prompt, DmMode::Conversation);
-                            async_ai.request_generation(&prompt, DmMode::Conversation);
+                            // Send to agent — it handles memory, context, and tool calls
+                            let ctx = self.build_creation_context();
+                            async_ai.request_agent_turn(
+                                &input,
+                                ctx,
+                                DmMode::CharacterCreation,
+                            );
                             self.thinking = true;
                             self.thinking_start = std::time::Instant::now();
                         }
                     }
+                    KeyCode::Tab => {
+                        self.show_sheet = !self.show_sheet;
+                    }
                     KeyCode::Backspace => {
                         self.input.pop();
-                    }
-                    KeyCode::Char('R') => {
-                        self.chat.scroll_to_bottom();
                     }
                     KeyCode::Char(c) => {
                         self.input.push(c);

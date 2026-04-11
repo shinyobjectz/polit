@@ -18,9 +18,10 @@ use title::{TitleAction, TitleScreen};
 
 /// Initialize terminal with mouse support
 fn init_terminal() -> ratatui::DefaultTerminal {
-    // Enable mouse capture for trackpad/scroll wheel
+    let terminal = ratatui::init();
+    // Enable mouse capture AFTER ratatui::init() so it's not reset by EnterAlternateScreen
     crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).ok();
-    ratatui::init()
+    terminal
 }
 
 /// Restore terminal and disable mouse capture
@@ -168,7 +169,7 @@ pub fn run_app_with_provider(
     eprintln!("Loading model for game...");
     let hf_token = std::env::var("HF_TOKEN").ok();
     let game_provider =
-        crate::ai::provider::CandleProvider::load("google/gemma-4-E2B-it", hf_token.as_deref())
+        crate::ai::provider::CandleProvider::load("google/gemma-4-E4B-it", hf_token.as_deref())
             .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
     eprintln!("Ready.");
     let provider: Box<dyn crate::ai::AiProvider> = Box::new(game_provider);

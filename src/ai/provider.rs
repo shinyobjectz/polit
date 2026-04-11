@@ -9,7 +9,7 @@ use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use std::num::NonZeroU32;
 
-use super::tools::DmResponse;
+use super::tools::{DmResponse, ToolCall};
 use super::{AiProvider, DmMode};
 
 /// llama.cpp-based provider for Gemma 4 GGUF models.
@@ -74,10 +74,10 @@ impl CandleProvider {
 
         let (gguf_repo, gguf_file) = match model_id {
             "google/gemma-4-E2B-it" | "gemma-4-e2b" => {
-                ("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q4_K_M.gguf")
+                ("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q8_0.gguf")
             }
             "google/gemma-4-E4B-it" | "gemma-4-e4b" => {
-                ("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf")
+                ("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q8_0.gguf")
             }
             other => {
                 return Err(
@@ -102,7 +102,7 @@ impl CandleProvider {
         max_tokens: usize,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(2048))
+            .with_n_ctx(NonZeroU32::new(8192))
             .with_n_threads(4)
             .with_n_threads_batch(4);
 
@@ -134,11 +134,11 @@ impl CandleProvider {
         ctx.decode(&mut batch)
             .map_err(|e| format!("Decode prompt: {}", e))?;
 
-        // Set up sampler: temp → top-k → top-p → dist
+        // Temp 0.9: slightly tighter than Google's 1.0 to reduce verbosity
         let mut sampler = LlamaSampler::chain_simple([
-            LlamaSampler::temp(0.7),
-            LlamaSampler::top_k(40),
-            LlamaSampler::top_p(0.9, 1),
+            LlamaSampler::temp(0.9),
+            LlamaSampler::top_k(64),
+            LlamaSampler::top_p(0.95, 1),
             LlamaSampler::dist(42),
         ]);
 
@@ -180,6 +180,16 @@ impl CandleProvider {
     }
 }
 
+impl CandleProvider {
+    /// Generate raw text without any parsing — for use by the agent layer
+    pub fn generate_raw(
+        &self,
+        prompt: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        with_stderr_suppressed(|| self.generate_text(prompt, 768))
+    }
+}
+
 impl AiProvider for CandleProvider {
     fn name(&self) -> &str {
         &self.model_id
@@ -188,30 +198,138 @@ impl AiProvider for CandleProvider {
     fn generate(
         &mut self,
         prompt: &str,
-        _mode: DmMode,
+        mode: DmMode,
     ) -> Result<DmResponse, Box<dyn std::error::Error + Send + Sync>> {
-        // Suppress stderr for the entire inference call (Metal shader spam)
-        let output = with_stderr_suppressed(|| self.generate_text(prompt, 512))?;
+        // Mode-aware token limits (bench tested):
+        // Reasoning block: ~250-400 tokens, narration: ~200-400, tool calls: ~50-100 each
+        // Must leave enough room for reasoning + narration + tools without cutoff
+        let max_tokens = match mode {
+            DmMode::CharacterCreation => 1024,
+            DmMode::Conversation => 768,
+            _ => 1024,
+        };
 
-        // Try to parse as structured JSON response
-        if let Ok(response) = serde_json::from_str::<DmResponse>(&output) {
-            return Ok(response);
+        // Suppress stderr for the entire inference call (Metal shader spam)
+        let output = with_stderr_suppressed(|| self.generate_text(prompt, max_tokens))?;
+
+        tracing::debug!("Raw model output ({} chars): {}", output.len(), &output[..output.len().min(300)]);
+
+        // Try native Gemma 4 format first
+        let native = super::native_format::parse_response(&output);
+        if !native.tool_calls.is_empty() || native.narration.len() > 10 {
+            tracing::info!(
+                "Native parse: narration={} chars, {} tool calls, reasoning={}",
+                native.narration.len(),
+                native.tool_calls.len(),
+                native.reasoning.is_some(),
+            );
+            if let Some(ref reasoning) = native.reasoning {
+                tracing::info!("Agent reasoning: {}", reasoning);
+            }
+            return Ok(DmResponse {
+                narration: native.narration,
+                tool_calls: native.tool_calls,
+            });
         }
 
-        // Model returned raw text — clean it up
-        let cleaned = clean_model_output(&output);
-        Ok(DmResponse {
-            narration: cleaned,
-            tool_calls: vec![],
-        })
+        // Fall back to JSON parsing
+        tracing::info!("Native format parse insufficient, falling back to JSON");
+        let parsed = parse_dm_response(&output);
+        tracing::info!(
+            "JSON parse: narration={} chars, {} tool calls",
+            parsed.narration.len(),
+            parsed.tool_calls.len()
+        );
+
+        Ok(parsed)
     }
 }
 
-/// Clean raw model output: strip JSON artifacts, special tokens, tool call syntax
-pub fn clean_model_output(raw: &str) -> String {
-    let mut text = raw.to_string();
+/// Parse model output into DmResponse. Tries multiple strategies:
+/// 1. Direct JSON parse of entire output
+/// 2. Extract JSON object from mixed text
+/// 3. Parse narration + tool_calls separately
+/// 4. Fall back to cleaned text with no tools
+pub fn parse_dm_response(raw: &str) -> DmResponse {
+    let cleaned = strip_special_tokens(raw);
 
-    // Strip special tokens
+    // Strategy 1: Direct JSON parse
+    if let Ok(response) = serde_json::from_str::<DmResponse>(&cleaned) {
+        // Log reasoning if present
+        log_reasoning(&cleaned);
+        return response;
+    }
+
+    // Strategy 2: Find JSON object in the text (model might prefix with text)
+    if let Some(json_str) = extract_json_object(&cleaned) {
+        if let Ok(response) = serde_json::from_str::<DmResponse>(&json_str) {
+            log_reasoning(&json_str);
+            return response;
+        }
+
+        // Strategy 3: Parse as generic JSON and extract fields
+        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            // Log reasoning if present (scratchpad — never shown to player)
+            if let Some(reasoning) = obj.get("reasoning").and_then(|v| v.as_str()) {
+                tracing::info!("Agent reasoning: {}", reasoning);
+            }
+
+            let narration = obj
+                .get("narration")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let mut tool_calls = Vec::new();
+            if let Some(tools_arr) = obj.get("tool_calls").and_then(|v| v.as_array()) {
+                for tool_val in tools_arr {
+                    if let Ok(tool) = serde_json::from_value::<ToolCall>(tool_val.clone()) {
+                        tool_calls.push(tool);
+                    } else {
+                        tracing::warn!("Failed to parse tool call: {}", tool_val);
+                    }
+                }
+            }
+
+            if !narration.is_empty() || !tool_calls.is_empty() {
+                return DmResponse {
+                    narration,
+                    tool_calls,
+                };
+            }
+        }
+    }
+
+    // Strategy 4: Extract narration from partial JSON
+    if let Some(narration) = extract_narration_field(&cleaned) {
+        return DmResponse {
+            narration,
+            tool_calls: vec![],
+        };
+    }
+
+    // Strategy 5: Fall back to cleaned text
+    let text = clean_model_output(&cleaned);
+    DmResponse {
+        narration: text,
+        tool_calls: vec![],
+    }
+}
+
+/// Log the reasoning field from model output (scratchpad — never shown to player)
+fn log_reasoning(json_str: &str) {
+    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(json_str) {
+        if let Some(reasoning) = obj.get("reasoning").and_then(|v| v.as_str()) {
+            if !reasoning.is_empty() {
+                tracing::info!("Agent reasoning: {}", reasoning);
+            }
+        }
+    }
+}
+
+/// Strip Gemma special tokens from output
+fn strip_special_tokens(raw: &str) -> String {
+    let mut text = raw.to_string();
     for token in &[
         "<start_of_turn>",
         "<end_of_turn>",
@@ -223,22 +341,91 @@ pub fn clean_model_output(raw: &str) -> String {
     ] {
         text = text.replace(token, "");
     }
+    text.trim().to_string()
+}
 
-    // Try to extract narration from partial JSON
-    if let Some(start) = text.find("\"narration\"") {
-        if let Some(colon) = text[start..].find(':') {
-            let after_colon = &text[start + colon + 1..];
-            // Find the string value
-            if let Some(quote_start) = after_colon.find('"') {
-                let inner = &after_colon[quote_start + 1..];
-                if let Some(quote_end) = inner.find('"') {
-                    return inner[..quote_end]
-                        .replace("\\n", "\n")
-                        .replace("\\\"", "\"");
+/// Find the outermost JSON object { ... } in text
+fn extract_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let bytes = text.as_bytes();
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut escape = false;
+
+    for i in start..bytes.len() {
+        let c = bytes[i] as char;
+        if escape {
+            escape = false;
+            continue;
+        }
+        if c == '\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if c == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(text[start..=i].to_string());
                 }
             }
+            _ => {}
         }
     }
+    None
+}
+
+/// Try to extract just the "narration" field value from partial JSON
+fn extract_narration_field(text: &str) -> Option<String> {
+    let start = text.find("\"narration\"")?;
+    let after = &text[start..];
+    let colon = after.find(':')?;
+    let after_colon = after[colon + 1..].trim();
+
+    if !after_colon.starts_with('"') {
+        return None;
+    }
+
+    let inner = &after_colon[1..];
+    let mut result = String::new();
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(result),
+            '\\' => {
+                if let Some(escaped) = chars.next() {
+                    match escaped {
+                        'n' => result.push('\n'),
+                        '"' => result.push('"'),
+                        '\\' => result.push('\\'),
+                        _ => {
+                            result.push('\\');
+                            result.push(escaped);
+                        }
+                    }
+                }
+            }
+            _ => result.push(c),
+        }
+    }
+    if !result.is_empty() {
+        Some(result)
+    } else {
+        None
+    }
+}
+
+/// Clean raw model output: strip JSON artifacts for pure text fallback
+pub fn clean_model_output(raw: &str) -> String {
+    let mut text = raw.to_string();
 
     // Strip any remaining JSON syntax
     text = text.replace("{", "").replace("}", "");
@@ -252,18 +439,12 @@ pub fn clean_model_output(raw: &str) -> String {
         .filter(|line| {
             let trimmed = line.trim();
             !trimmed.starts_with('"') || !trimmed.contains(':') || trimmed.len() > 60
-            // keep long lines even if they have quotes
         })
         .collect();
 
     let result = lines.join("\n").trim().to_string();
     if result.is_empty() {
-        // Fallback: return original minus special tokens
-        raw.replace("<start_of_turn>", "")
-            .replace("<end_of_turn>", "")
-            .replace("model\n", "")
-            .trim()
-            .to_string()
+        raw.trim().to_string()
     } else {
         result
     }

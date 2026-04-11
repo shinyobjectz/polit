@@ -20,10 +20,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if args.contains(&"--mock".to_string()) {
         // Explicit mock mode (for testing without model)
         init_file_logger();
+        ai::debug_log::DebugLog::init();
         ui::run_app()?;
     } else {
         // Default: always use real model
         init_file_logger();
+        ai::debug_log::DebugLog::init();
         let model_id = get_model_id(&args);
         let hf_token = std::env::var("HF_TOKEN").ok();
 
@@ -75,9 +77,11 @@ fn run_query(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
 
     tracing::info!("Generating...");
-    let dm_prompt = format!(
-        "<start_of_turn>user\nYou are the dungeon master for POLIT, an American politics simulator. Respond in character.\n\n{}<end_of_turn>\n<start_of_turn>model\n",
-        prompt
+    let dm_prompt = ai::native_format::build_prompt(
+        "You are the dungeon master for POLIT, an American politics simulator. Respond in character.",
+        &ai::native_format::tool_declarations(ai::DmMode::DungeonMaster),
+        &[],
+        prompt,
     );
 
     use ai::AiProvider;
@@ -96,7 +100,7 @@ fn get_model_id<'a>(args: &'a [String]) -> &'a str {
         .position(|a| a == "--model")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
-        .unwrap_or("google/gemma-4-E2B-it")
+        .unwrap_or("google/gemma-4-E4B-it")
 }
 
 fn init_file_logger() {

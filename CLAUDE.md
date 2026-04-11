@@ -68,14 +68,20 @@ All design docs live in `docs/gdd/`. Each section has frontmatter with `depends_
 
 ## Development Commands
 
+**IMPORTANT: Always use `make` instead of raw `cargo` commands.** The Makefile handles building, testing, and installing to PATH in one step.
+
 ```bash
-cargo run                        # launch game (debug)
-cargo run -- --headless          # headless simulation
-cargo run -- --mock-ai           # deterministic AI for testing
-cargo run -- --tutorial          # jump to tutorial
-cargo test                       # unit + integration tests
-cargo test --features sim        # headless simulation tests
-cargo bench                      # performance benchmarks
-polit-data fetch --all           # refresh real-world data
-polit-sdk validate game/         # validate scenario data
+make quick                       # build + install to PATH (use this for dev iteration)
+make update                      # fmt + lint + test + install (use before pushing)
+make run                         # launch game (debug, no install)
+make test                        # unit + integration tests
+make test-verbose                # tests with stdout
+make lint                        # clippy
+make fmt                         # rustfmt
+make check                       # fmt + lint + test
+make install                     # install binary to ~/.cargo/bin/polit
+make info                        # show install paths and data locations
+make clean-data                  # reset game database
 ```
+
+After `make quick` or `make install`, `polit` is available globally from any directory.

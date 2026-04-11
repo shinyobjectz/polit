@@ -1,8 +1,10 @@
 pub mod agent;
 pub mod async_chat;
 pub mod context;
+pub mod debug_log;
 pub mod memory;
 pub mod mock;
+pub mod native_format;
 pub mod provider;
 pub mod tools;
 pub mod vfs;
@@ -20,6 +22,8 @@ pub enum DmMode {
     DungeonMaster,
     /// Checking law compliance
     LawInterpreter,
+    /// Character creation — collaborative, tool-heavy
+    CharacterCreation,
 }
 
 /// Trait for AI providers (real model or mock)
@@ -67,7 +71,7 @@ impl AiHarness {
     {
         self.agent.set_mode(mode);
         self.agent
-            .run_turn(player_input, context, self.provider.as_mut(), tool_executor)
+            .run_turn(player_input, context, self.provider.as_mut(), tool_executor, None)
     }
 
     /// Simple generate without tool loop (for backward compat)

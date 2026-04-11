@@ -125,16 +125,16 @@ impl App {
             // Dark background
             frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
-            // Calculate input height based on content lines
-            let input_lines: Vec<&str> = input_str.split('\n').collect();
-            let input_height = (input_lines.len() as u16 + 2).max(3).min(10); // border + content, min 3, max 10
+            // Calculate input height accounting for word wrapping
+            let input_height = super::components::input_bar::height_for(&input_str, theme::MAX_CONTENT_WIDTH);
 
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(3),               // Chat (centered)
-                    Constraint::Length(input_height), // Input (dynamic height)
-                    Constraint::Length(2),            // Footer status bar
+                    Constraint::Min(3),               // Chat
+                    Constraint::Length(input_height),  // Input
+                    Constraint::Length(1),             // Gap
+                    Constraint::Length(2),             // Footer status bar
                 ])
                 .split(area);
 
@@ -142,41 +142,9 @@ impl App {
             let chat_area = theme::centered_content(layout[0]);
             frame.render_widget(chat_widget, chat_area);
 
-            // Input — floating card bar, centered, grows with content
+            // Input — floating card bar with wrapping
             let input_content_area = theme::centered_content(layout[1]);
-            let input_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::ACCENT_BLUE))
-                .style(Style::default().bg(theme::BG_HIGHLIGHT));
-            let inner_area = input_block.inner(input_content_area);
-            frame.render_widget(input_block, input_content_area);
-
-            // Render multi-line input
-            let mut lines: Vec<Line> = Vec::new();
-            for (i, line) in input_lines.iter().enumerate() {
-                let mut spans = Vec::new();
-                if i == 0 {
-                    spans.push(Span::styled("▶ ", Style::default().fg(theme::ACCENT)));
-                } else {
-                    spans.push(Span::styled("  ", Style::default()));
-                }
-                spans.push(Span::styled(
-                    line.to_string(),
-                    Style::default().fg(theme::FG),
-                ));
-                // Cursor on the last line
-                if i == input_lines.len() - 1 {
-                    spans.push(Span::styled(
-                        "▊",
-                        Style::default()
-                            .fg(theme::FG_DIM)
-                            .add_modifier(Modifier::SLOW_BLINK),
-                    ));
-                }
-                lines.push(Line::from(spans));
-            }
-            let input_widget = Paragraph::new(lines);
-            frame.render_widget(input_widget, inner_area);
+            let inner_area = components::input_bar::render(frame, input_content_area, &input_str);
 
             // Slash autocomplete menu
             if showing_slash && !filtered_cmds.is_empty() {
@@ -228,7 +196,7 @@ impl App {
 
             // Footer status bar (component)
             components::status_bar::render_game(
-                frame, layout[2], week, year, &phase, ap_current, ap_max,
+                frame, layout[3], week, year, &phase, ap_current, ap_max,
             );
         })?;
         Ok(())

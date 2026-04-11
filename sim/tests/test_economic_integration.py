@@ -82,8 +82,6 @@ def test_fiscal_stimulus_cascades_through_all_layers():
     events = {
         1: [{"type": "FiscalBill",
              "bill_type": "spending",
-             "spending_gdp_pct": 0.03,
-             "tax_cut_gdp_pct": 0.0,
              "amount_gdp_pct": 0.03}],
     }
 
@@ -113,8 +111,8 @@ def test_fiscal_impulses_persist_across_ticks():
     """A single fiscal bill should produce GDP deltas across multiple ticks."""
     events = {
         1: [{"type": "FiscalBill",
-             "spending_gdp_pct": 0.03,
-             "tax_cut_gdp_pct": 0.0}],
+             "bill_type": "spending", "amount_gdp_pct": 0.03,
+             }],
     }
 
     deltas = _run_simulation(12, events_by_tick=events)
@@ -149,8 +147,8 @@ def test_sectors_respond_to_macro_gdp_change():
     # With a spending shock: sectors should deviate from baseline
     events = {
         1: [{"type": "FiscalBill",
-             "spending_gdp_pct": 0.05,
-             "tax_cut_gdp_pct": 0.0}],
+             "bill_type": "spending", "amount_gdp_pct": 0.05,
+             }],
     }
     shock_deltas = _run_simulation(4, events_by_tick=events)
 
@@ -285,19 +283,19 @@ def test_multi_tick_macro_state_accumulates():
     """Two fiscal bills should produce a higher peak GDP growth than one."""
     events_double = {
         1: [{"type": "FiscalBill",
-             "spending_gdp_pct": 0.02,
-             "tax_cut_gdp_pct": 0.0}],
+             "bill_type": "spending", "amount_gdp_pct": 0.02,
+             }],
         3: [{"type": "FiscalBill",
-             "spending_gdp_pct": 0.02,
-             "tax_cut_gdp_pct": 0.0}],
+             "bill_type": "spending", "amount_gdp_pct": 0.02,
+             }],
     }
 
     deltas_double = _run_simulation(12, events_by_tick=events_double)
 
     events_single = {
         1: [{"type": "FiscalBill",
-             "spending_gdp_pct": 0.02,
-             "tax_cut_gdp_pct": 0.0}],
+             "bill_type": "spending", "amount_gdp_pct": 0.02,
+             }],
     }
     deltas_single = _run_simulation(12, events_by_tick=events_single)
 

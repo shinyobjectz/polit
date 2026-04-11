@@ -119,6 +119,10 @@ impl ChatStream {
         self.add_message(MessageStyle::PhaseHeader, text);
     }
 
+    pub fn total_lines(&self) -> u16 {
+        self.total_lines
+    }
+
     pub fn scroll_up_by(&mut self, lines: u16) {
         self.scroll_up = (self.scroll_up + lines).min(self.total_lines);
         self.user_scrolled = true;
@@ -193,7 +197,23 @@ impl ChatStream {
             })
             .collect();
 
-        self.total_lines = lines.len() as u16;
+        // Estimate wrapped line count (Paragraph::wrap adds lines for long text)
+        // Use viewport width (or 80 as default) to estimate wrapping
+        let wrap_width = viewport_height.max(1) as usize; // placeholder, we use line lengths
+        let estimated_wrapped: u16 = lines
+            .iter()
+            .map(|line| {
+                let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+                // Assume ~76 char wrap width (80 - borders)
+                if line_width <= 76 || line_width == 0 {
+                    1u16
+                } else {
+                    ((line_width + 75) / 76) as u16
+                }
+            })
+            .sum();
+
+        self.total_lines = estimated_wrapped;
 
         let block = Block::default().style(Style::default().bg(theme::BG));
 

@@ -147,11 +147,20 @@ class MacroEconomyLayer(SimulationLayer):
             etype = event.get("type", "")
 
             if etype == "FiscalBill":
-                spending = event.get("spending_gdp_pct", 0.0)
-                tax_cut = event.get("tax_cut_gdp_pct", 0.0)
-                gdp_fx = spending * SPENDING_MULTIPLIER + tax_cut * TAX_CUT_MULTIPLIER
-                # Spending is mildly inflationary
-                infl_fx = spending * 0.3 + tax_cut * 0.1
+                bill_type = event.get("bill_type", "spending")
+                amount = event.get("amount_gdp_pct", 0.0)
+                if bill_type == "spending":
+                    gdp_fx = amount * SPENDING_MULTIPLIER
+                    infl_fx = amount * 0.3
+                elif bill_type == "tax_cut":
+                    gdp_fx = amount * TAX_CUT_MULTIPLIER
+                    infl_fx = amount * 0.1
+                elif bill_type == "regulation":
+                    gdp_fx = -amount * 0.3  # regulations drag GDP slightly
+                    infl_fx = amount * 0.05
+                else:  # mandate, other
+                    gdp_fx = amount * 0.5
+                    infl_fx = amount * 0.15
                 self._impulses.append(_FiscalImpulse(gdp_fx, infl_fx))
 
             elif etype == "MonetaryPolicy":
@@ -162,16 +171,16 @@ class MacroEconomyLayer(SimulationLayer):
                 self._impulses.append(_FiscalImpulse(gdp_fx, infl_fx))
 
             elif etype == "Tariff":
-                tariff_pct = event.get("tariff_pct", 0.10)
+                rate = event.get("rate", event.get("tariff_pct", 0.10))
                 # Tariffs: supply shock — GDP drag + inflation up
-                gdp_fx = -tariff_pct * 0.5
-                infl_fx = tariff_pct * 0.6
+                gdp_fx = -rate * 0.5
+                infl_fx = rate * 0.6
                 self._impulses.append(_FiscalImpulse(gdp_fx, infl_fx))
 
             elif etype == "EconomyShock":
-                severity = event.get("severity", 0.0)
-                gdp_fx = -severity * 0.02
-                infl_fx = severity * 0.01
+                magnitude = event.get("magnitude", event.get("severity", 0.0))
+                gdp_fx = -magnitude * 0.02
+                infl_fx = magnitude * 0.01
                 self._impulses.append(_FiscalImpulse(gdp_fx, infl_fx))
 
     def _sum_impulses(self) -> tuple[float, float]:

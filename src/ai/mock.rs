@@ -33,6 +33,7 @@ impl AiProvider for MockProvider {
             DmMode::Conversation => generate_conversation(&mut rng, prompt),
             DmMode::DungeonMaster => generate_dm_event(&mut rng),
             DmMode::LawInterpreter => generate_legal(&mut rng, prompt),
+            DmMode::CharacterCreation => generate_creation(&mut rng, prompt, self.call_count),
         };
 
         Ok(response)
@@ -172,6 +173,62 @@ fn generate_dm_event(rng: &mut impl Rng) -> DmResponse {
     DmResponse {
         narration: narration.to_string(),
         tool_calls: vec![tool_call.clone()],
+    }
+}
+
+fn generate_creation(_rng: &mut impl Rng, prompt: &str, call_count: u32) -> DmResponse {
+    let input_lower = prompt.to_lowercase();
+    let mut tool_calls = vec![];
+
+    let narration = match call_count {
+        1 => {
+            tool_calls.push(ToolCall::AskQuestion {
+                topic: "background".into(),
+                question: "What have you done with your life so far?".into(),
+            });
+            "Welcome! I'm excited to learn who you are. Tell me — before all this, \
+             before politics, what was your life? What did you do, and what made you \
+             want something different?"
+        }
+        2 => {
+            if input_lower.contains("lawyer") || input_lower.contains("attorney") || input_lower.contains("prosecutor") {
+                tool_calls.push(ToolCall::LockField {
+                    field: "background".into(),
+                    value: "Legal professional".into(),
+                });
+            } else if input_lower.contains("business") || input_lower.contains("company") {
+                tool_calls.push(ToolCall::LockField {
+                    field: "background".into(),
+                    value: "Business executive".into(),
+                });
+            } else if input_lower.contains("teacher") || input_lower.contains("professor") {
+                tool_calls.push(ToolCall::LockField {
+                    field: "background".into(),
+                    value: "Educator".into(),
+                });
+            }
+            tool_calls.push(ToolCall::AskQuestion {
+                topic: "motivation".into(),
+                question: "What drives you into public life?".into(),
+            });
+            "Interesting. That tells me a lot about how you see the world. \
+             So what's the thing that finally pushed you into the arena? \
+             Was there a moment, an injustice, a promise you made?"
+        }
+        _ => {
+            tool_calls.push(ToolCall::AskQuestion {
+                topic: "general".into(),
+                question: "Tell me more about yourself.".into(),
+            });
+            "That's fascinating — I can see the shape of who you are forming. \
+             Tell me something nobody else knows about you. What's the thing \
+             you'd never put on a campaign poster?"
+        }
+    };
+
+    DmResponse {
+        narration: narration.to_string(),
+        tool_calls,
     }
 }
 
