@@ -2,18 +2,24 @@
 
 import msgpack
 
+from sim.layers.corporate import CorporateLayer
+from sim.layers.geopolitical import GeopoliticalLayer
 from sim.layers.household import HouseholdLayer
 from sim.layers.macro_economy import MacroEconomyLayer
+from sim.layers.markets import MarketLayer
 from sim.layers.media import MediaLayer
 from sim.layers.political import PoliticalLayer
 from sim.layers.sectors import SectorLayer
 
 _layers: list = [
-    MacroEconomyLayer(),  # 1. macro runs first — GDP, inflation, unemployment
-    SectorLayer(),        # 2. sectors respond to macro conditions + shocks
-    HouseholdLayer(),     # 3. household reads macro + sector output
-    PoliticalLayer(),     # 4. political reads macro + events → approval, protest risk
-    MediaLayer(),         # 5. media amplifies political signals from layer 4
+    MacroEconomyLayer(),   # 1. macro — GDP, inflation, unemployment
+    SectorLayer(),         # 2. sectors respond to macro + shocks
+    MarketLayer(),         # 3. markets respond to macro + sectors
+    HouseholdLayer(),      # 4. household reads macro + sector output
+    PoliticalLayer(),      # 5. political reads macro → approval, protest
+    MediaLayer(),          # 6. media amplifies political signals
+    CorporateLayer(),      # 7. corporate reacts to policies + sector state
+    GeopoliticalLayer(),   # 8. geopolitics — foreign powers, trade, migration
 ]
 
 
@@ -23,9 +29,12 @@ def reset_layers() -> None:
     _layers = [
         MacroEconomyLayer(),
         SectorLayer(),
+        MarketLayer(),
         HouseholdLayer(),
         PoliticalLayer(),
         MediaLayer(),
+        CorporateLayer(),
+        GeopoliticalLayer(),
     ]
 
 
@@ -106,12 +115,10 @@ def tick(world_state_bytes: bytes, events_bytes: bytes) -> bytes:
     delta = _default_delta()
     _apply_exogenous_shocks(events, delta)
 
-    # Layers run in dependency order: macro → sectors → household.
+    # Layers run in dependency order (8 layers):
+    # macro → sectors → markets → household → political → media → corporate → geopolitical
     # Each layer reads the accumulated delta from previous layers so
-    # cross-layer effects cascade within a single tick:
-    #   macro produces gdp_growth_delta, fed_funds_rate, unemployment_delta
-    #   → sectors read those to adjust output/employment
-    #   → household reads sector_deltas + macro deltas for income effects
+    # cross-layer effects cascade within a single tick.
     for layer in _layers:
         delta = layer.step(world_state, events, delta)
 

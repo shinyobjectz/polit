@@ -345,9 +345,9 @@ fn strip_turn_tokens(raw: &str) -> &str {
 
 fn creation_tool_defs() -> Vec<String> {
     vec![
-        tool_def("lock_field", "Save a character detail the player revealed. Use this EVERY TIME the player tells you something about their character.", &[
+        tool_def("lock_field", "Save a character detail the player revealed. Use this EVERY TIME the player tells you something about their character. Be detailed and vivid in the value — write a rich description, not just a word or two.", &[
             ("field", "string", "One of: background, motivation, archetype, starting_office, party, traits, family, rival, secret, tone"),
-            ("value", "string", "The value to save. For tone: a short description like 'dark comedy' or 'earnest drama'"),
+            ("value", "string", "A vivid, detailed description. Examples: 'Former federal prosecutor who spent 12 years putting corrupt officials behind bars' or 'Tongue-in-cheek political satire with absurdist comedy and pop culture references'"),
         ]),
     ]
 }

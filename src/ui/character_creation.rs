@@ -260,7 +260,7 @@ impl CharacterCreationScreen {
                                         }
                                         AgentStep::Generating(iter) => {
                                             if iter > 1 {
-                                                self.chat.add_system(&format!("  ↻ retry {}", iter));
+                                                self.chat.add_system(&format!("  ↻ step {}", iter));
                                             }
                                         }
                                     }
@@ -354,9 +354,12 @@ impl CharacterCreationScreen {
         for tool in tools {
             match tool {
                 ToolCall::LockField { field, value } => {
-                    tracing::info!("Locking field: {} = {}", field, value);
-                    self.character.set(field, value);
-                    self.chat.add_system(&format!("✓ {} set", field));
+                    // Strip any stray quotes from field/value (model sometimes wraps in quotes)
+                    let clean_field = field.trim_matches('"').trim().to_lowercase().replace(' ', "_");
+                    let clean_value = value.trim_matches('"').trim().to_string();
+                    tracing::info!("Locking field: '{}' = '{}'", clean_field, clean_value);
+                    self.character.set(&clean_field, &clean_value);
+                    self.chat.add_system(&format!("✓ {} set", clean_field));
                 }
                 ToolCall::SuggestOptions {
                     field,
