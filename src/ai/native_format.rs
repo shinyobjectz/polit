@@ -103,11 +103,12 @@ pub fn parse_response(raw: &str) -> ParsedResponse {
     let mut remaining = raw;
 
     while !remaining.is_empty() {
-        // Find the earliest special token
+        // Find the earliest special token (support multiple formats the model may use)
         let positions = [
             remaining.find("<|channel>").map(|p| (p, "channel")),
             remaining.find("<|tool_call>").map(|p| (p, "tool_call")),
             remaining.find("<|tool_result>").map(|p| (p, "tool_result")),
+            remaining.find("<execute_tool>").map(|p| (p, "execute_tool")),
         ];
 
         let earliest = positions
@@ -166,6 +167,23 @@ pub fn parse_response(raw: &str) -> ParsedResponse {
                 remaining = &remaining[idx + "<|tool_result>".len()..];
                 if let Some(end) = remaining.find("<tool_result|>") {
                     remaining = &remaining[end + "<tool_result|>".len()..];
+                } else {
+                    remaining = "";
+                }
+            }
+            Some((idx, "execute_tool")) => {
+                // Alternate format: <execute_tool>{"name":"func","field":"x","value":"y"}</execute_tool>
+                let before = remaining[..idx].trim();
+                if !before.is_empty() {
+                    narration_parts.push(before.to_string());
+                }
+                remaining = &remaining[idx + "<execute_tool>".len()..];
+                if let Some(end) = remaining.find("</execute_tool>") {
+                    let json_str = remaining[..end].trim();
+                    if let Some(tool) = parse_execute_tool_json(json_str) {
+                        tool_calls.push(tool);
+                    }
+                    remaining = &remaining[end + "</execute_tool>".len()..];
                 } else {
                     remaining = "";
                 }
@@ -282,6 +300,48 @@ fn parse_tool_call(raw: &str) -> Option<ToolCall> {
         }),
         _ => {
             tracing::warn!("Unknown native tool call: {}", func_name);
+            None
+        }
+    }
+}
+
+/// Parse the <execute_tool> JSON format the model sometimes uses.
+/// Format: {"name": "lock_field", "field": "background", "value": "former prosecutor"}
+fn parse_execute_tool_json(json_str: &str) -> Option<ToolCall> {
+    let obj: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    let name = obj.get("name").and_then(|v| v.as_str())?;
+
+    match name {
+        "lock_field" => {
+            let field = obj.get("field").and_then(|v| v.as_str())?.to_string();
+            let value = obj.get("value").and_then(|v| v.as_str())?.to_string();
+            Some(ToolCall::LockField { field, value })
+        }
+        "narrate" => {
+            let text = obj.get("text").and_then(|v| v.as_str())?.to_string();
+            Some(ToolCall::Narrate { text })
+        }
+        "modify_rel" => {
+            Some(ToolCall::ModifyRel {
+                npc: obj.get("npc").and_then(|v| v.as_str())?.to_string(),
+                field: obj.get("field").and_then(|v| v.as_str())?.to_string(),
+                delta: obj.get("delta").and_then(|v| v.as_i64())? as i32,
+            })
+        }
+        "set_mood" => {
+            Some(ToolCall::SetMood {
+                npc: obj.get("npc").and_then(|v| v.as_str())?.to_string(),
+                mood: obj.get("mood").and_then(|v| v.as_str())?.to_string(),
+            })
+        }
+        "trigger_event" => {
+            Some(ToolCall::TriggerEvent {
+                event_type: obj.get("event_type").and_then(|v| v.as_str())?.to_string(),
+                description: obj.get("description").and_then(|v| v.as_str())?.to_string(),
+            })
+        }
+        _ => {
+            tracing::warn!("Unknown execute_tool name: {}", name);
             None
         }
     }

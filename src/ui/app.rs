@@ -23,6 +23,16 @@ pub struct App {
     pub showing_slash_menu: bool,
     pub slash_filter: String,
     pub slash_selected: usize,
+    // View switcher
+    pub active_view: GameView,
+    pub show_view_bar: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GameView {
+    Chat,
+    Character,
+    // Future: Map, Cards, Laws
 }
 
 /// Slash commands available
@@ -53,6 +63,8 @@ impl App {
             showing_slash_menu: false,
             slash_filter: String::new(),
             slash_selected: 0,
+            active_view: GameView::Chat,
+            show_view_bar: false,
         }
     }
 
@@ -194,6 +206,75 @@ impl App {
                 frame.render_widget(menu, menu_area);
             }
 
+            // Character sheet overlay (when Tab switches to Character view)
+            if self.active_view == GameView::Character {
+                // Read character data from save files
+                let char_fields = if let Some(home) = std::env::var_os("HOME") {
+                    let save_path = std::path::PathBuf::from(home).join(".polit/saves/current");
+                    crate::state::GameStateFs::open(&save_path)
+                        .map(|fs| fs.character_fields())
+                        .unwrap_or_default()
+                } else {
+                    std::collections::HashMap::new()
+                };
+
+                if !char_fields.is_empty() {
+                    let keys = ["name", "background", "archetype", "starting_office",
+                                "party", "traits", "motivation", "tone"];
+                    let lines: Vec<Line> = keys.iter()
+                        .filter_map(|k| {
+                            char_fields.get(*k).map(|v| {
+                                let display = if v.len() > 60 {
+                                    format!("{}...", &v[..57])
+                                } else {
+                                    v.clone()
+                                };
+                                Line::from(vec![
+                                    Span::styled(format!("{}: ", k), Style::default().fg(theme::FG_DIM)),
+                                    Span::styled(display, Style::default().fg(theme::FG)),
+                                ])
+                            })
+                        })
+                        .collect();
+
+                    let height = (lines.len() as u16 + 2).min(chat_area.height);
+                    let width = 50u16.min(area.width.saturating_sub(4));
+                    let x = area.x + (area.width.saturating_sub(width)) / 2;
+                    let y = chat_area.y + 1;
+                    let sheet_area = Rect::new(x, y, width, height);
+
+                    let sheet = Paragraph::new(lines).block(
+                        Block::default()
+                            .title(" Character [Tab to close] ")
+                            .title_style(Style::default().fg(theme::FG_MUTED))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(theme::ACCENT_BLUE))
+                            .style(Style::default().bg(theme::BG)),
+                    );
+                    frame.render_widget(Clear, sheet_area);
+                    frame.render_widget(sheet, sheet_area);
+                }
+            }
+
+            // View indicator pill on status bar
+            let view_label = match self.active_view {
+                GameView::Chat => "",
+                GameView::Character => " [Character] ",
+            };
+            if !view_label.is_empty() {
+                let pill = Paragraph::new(Span::styled(
+                    view_label,
+                    Style::default().fg(theme::ACCENT_BLUE),
+                ));
+                let pill_area = Rect::new(
+                    area.width.saturating_sub(16),
+                    layout[3].y,
+                    15,
+                    1,
+                );
+                frame.render_widget(pill, pill_area);
+            }
+
             // Footer status bar (component)
             components::status_bar::render_game(
                 frame, layout[3], week, year, &phase, ap_current, ap_max,
@@ -301,6 +382,12 @@ impl App {
                     }
                     KeyCode::Backspace => {
                         self.input.pop();
+                    }
+                    KeyCode::Tab => {
+                        self.active_view = match self.active_view {
+                            GameView::Chat => GameView::Character,
+                            GameView::Character => GameView::Chat,
+                        };
                     }
                     KeyCode::Char('/') if self.input.is_empty() => {
                         self.input.push('/');
