@@ -903,21 +903,23 @@ impl CharacterCreationScreen {
                 .chat
                 .messages
                 .last()
-                .map(|m| m.text.starts_with("✦"))
+                .map(|m| m.text.contains("generating (") || m.text.starts_with("✦"))
                 .unwrap_or(false)
             {
                 self.chat.messages.pop();
             }
             let elapsed = self.thinking_start.elapsed().as_secs();
+            let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let spin_char = spinner[(self.frame_count as usize / 5) % spinner.len()];
             self.chat
-                .add_system(&format!("✦{} ({}s)", dots, elapsed));
+                .add_system(&format!("{} generating ({}s)", spin_char, elapsed));
         } else {
             // Remove loading indicator when done
             if self
                 .chat
                 .messages
                 .last()
-                .map(|m| m.text.starts_with("✦"))
+                .map(|m| m.text.contains("generating (") || m.text.starts_with("✦"))
                 .unwrap_or(false)
             {
                 self.chat.messages.pop();
