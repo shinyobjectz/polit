@@ -311,13 +311,16 @@ impl Agent {
                  When they tell you something concrete about their character, quietly save it \
                  with lock_field in the background — but keep the conversation flowing naturally. \
                  The player should feel like they're talking to a friend, not filling out a form.\n\n\
+                 The character's NAME is already set — do NOT change it or lock_field 'name'. \
+                 It's shown on the character card. Focus on discovering who they ARE.\n\n\
                  TONE: Pay attention to how the player communicates. Are they funny, serious, \
                  dark, satirical, earnest, absurd? Once you have a clear sense of their vibe, \
                  lock_field 'tone' with a short description (e.g. 'dark comedy', 'earnest drama', \
                  'absurdist satire', 'gritty realism'). This sets the narrator's voice for the \
                  entire game.\n\n\
                  Valid fields for lock_field: background, motivation, archetype, starting_office, \
-                 party, traits, family, rival, secret, tone"
+                 party, traits, family, rival, secret, tone\n\
+                 Do NOT lock_field 'name' — it is already set."
             }
             DmMode::Narrator => {
                 "You are the narrator. Generate morning briefings and describe consequences. \

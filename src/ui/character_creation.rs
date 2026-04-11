@@ -249,6 +249,7 @@ impl CharacterCreationScreen {
                         self.thinking = true;
                         self.thinking_start = std::time::Instant::now();
                         self.dm_question_count = 1;
+                        self.show_sheet = true; // Show character card by default
                         self.phase = CreationPhase::AiChat;
                     }
                 }
@@ -379,6 +380,11 @@ impl CharacterCreationScreen {
                     let clean_field = field.trim_matches('"').trim().to_lowercase().replace(' ', "_");
                     let clean_value = value.trim_matches('"').trim().to_string();
 
+                    // Name is already set from the form — don't let the model change it
+                    if clean_field == "name" {
+                        tracing::info!("Skipping lock_field for 'name' — already set from form");
+                        continue;
+                    }
                     let is_update = self.character.fields.contains_key(&clean_field);
                     if is_update {
                         let existing = self.character.get(&clean_field).unwrap().to_string();
