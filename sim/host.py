@@ -4,12 +4,14 @@ import msgpack
 
 from sim.layers.household import HouseholdLayer
 from sim.layers.macro_economy import MacroEconomyLayer
+from sim.layers.political import PoliticalLayer
 from sim.layers.sectors import SectorLayer
 
 _layers: list = [
     MacroEconomyLayer(),  # 1. macro runs first — GDP, inflation, unemployment
     SectorLayer(),        # 2. sectors respond to macro conditions + shocks
     HouseholdLayer(),     # 3. household reads macro + sector output
+    PoliticalLayer(),     # 4. political reads macro + events → approval, protest risk
 ]
 
 
@@ -20,6 +22,7 @@ def reset_layers() -> None:
         MacroEconomyLayer(),
         SectorLayer(),
         HouseholdLayer(),
+        PoliticalLayer(),
     ]
 
 
