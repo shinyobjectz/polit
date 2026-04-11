@@ -45,7 +45,12 @@ impl CandleProvider {
             LlamaBackend::init().map_err(|e| format!("Backend init: {}", e))
         })?;
 
-        let model_params = LlamaModelParams::default();
+        let model_params = {
+            let mut p = LlamaModelParams::default();
+            // Offload ALL layers to Metal GPU — massive speed improvement on Apple Silicon
+            p = p.with_n_gpu_layers(999);
+            p
+        };
         tracing::info!("Loading GGUF: {}", gguf_path);
         let model = with_stderr_suppressed(|| {
             LlamaModel::load_from_file(&backend, gguf_path, &model_params)
@@ -102,7 +107,7 @@ impl CandleProvider {
         max_tokens: usize,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(8192))
+            .with_n_ctx(NonZeroU32::new(4096))
             .with_n_threads(4)
             .with_n_threads_batch(4);
 

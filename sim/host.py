@@ -1,5 +1,6 @@
 """Simulation host entry point. Rust calls tick() via PyO3."""
 
+import json
 import msgpack
 
 from sim.layers.corporate import CorporateLayer
@@ -108,7 +109,14 @@ def _apply_exogenous_shocks(events: list[dict], delta: dict) -> None:
             )
 
 
-def tick(world_state_bytes: bytes, events_bytes: bytes) -> bytes:
+def tick(world_state_bytes: bytes, events_bytes: bytes) -> str:
+    """Process one simulation tick.
+
+    Inputs are MessagePack-encoded (from Rust via rmp_serde).
+    Output is a JSON string (serde_json handles map-keyed struct
+    deserialization correctly, unlike rmp_serde which defaults to
+    positional arrays).
+    """
     world_state = msgpack.unpackb(world_state_bytes, raw=False)
     events = msgpack.unpackb(events_bytes, raw=False)
 
@@ -122,4 +130,4 @@ def tick(world_state_bytes: bytes, events_bytes: bytes) -> bytes:
     for layer in _layers:
         delta = layer.step(world_state, events, delta)
 
-    return msgpack.packb(delta)
+    return json.dumps(delta)

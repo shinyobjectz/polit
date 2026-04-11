@@ -184,6 +184,19 @@ impl Agent {
             // (the tool results will be fed back so model can produce narration)
         }
 
+        // If we exhausted all iterations with tools but no narration,
+        // do one final generation asking the model to just respond
+        if all_narration.is_empty() && !all_tools.is_empty() {
+            tracing::info!("All iterations produced tools but no narration — requesting final response");
+            emit_step(super::async_chat::AgentStep::Generating(iterations + 1));
+            let prompt = self.build_continuation_prompt(user_input, context, &tool_results);
+            if let Ok(response) = provider.generate(&prompt, self.mode) {
+                if !response.narration.is_empty() {
+                    all_narration.push(response.narration);
+                }
+            }
+        }
+
         // Store in memory
         let tool_summaries: Vec<String> = all_tools.iter().map(|t| summarize_tool(t)).collect();
         let final_narration = all_narration.join("\n\n");

@@ -1,3 +1,4 @@
+import json
 import msgpack
 from sim.host import tick
 
@@ -18,8 +19,8 @@ def test_tick_returns_valid_delta():
     })
     events = msgpack.packb([])
 
-    result_bytes = tick(world_state, events)
-    delta = msgpack.unpackb(result_bytes)
+    result = tick(world_state, events)
+    delta = json.loads(result)
 
     assert isinstance(delta, dict)
     assert "gdp_growth_delta" in delta
@@ -48,8 +49,8 @@ def test_tick_processes_sector_shock():
         "severity": 0.7,
     }])
 
-    result_bytes = tick(world_state, events)
-    delta = msgpack.unpackb(result_bytes)
+    result = tick(world_state, events)
+    delta = json.loads(result)
 
     assert "sector_deltas" in delta
     assert len(delta["sector_deltas"]) > 0

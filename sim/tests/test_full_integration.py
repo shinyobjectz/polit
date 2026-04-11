@@ -1,3 +1,4 @@
+import json
 import math
 import time
 
@@ -26,7 +27,7 @@ def _run(n_ticks, events_by_tick=None, counties=None):
         world["week"] = week
         ws = msgpack.packb(world)
         ev = msgpack.packb(events_by_tick.get(week, []))
-        delta = msgpack.unpackb(tick(ws, ev), raw=False)
+        delta = json.loads(tick(ws, ev))
         deltas.append(delta)
         # Accumulate
         macro["gdp_growth"] += delta.get("gdp_growth_delta", 0)

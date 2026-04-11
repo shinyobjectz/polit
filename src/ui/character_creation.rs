@@ -351,15 +351,35 @@ impl CharacterCreationScreen {
 
     /// Process tool calls from the agent response
     fn process_agent_tools(&mut self, tools: &[ToolCall]) {
+        let mut seen_fields = std::collections::HashSet::new();
         for tool in tools {
             match tool {
                 ToolCall::LockField { field, value } => {
-                    // Strip any stray quotes from field/value (model sometimes wraps in quotes)
                     let clean_field = field.trim_matches('"').trim().to_lowercase().replace(' ', "_");
                     let clean_value = value.trim_matches('"').trim().to_string();
-                    tracing::info!("Locking field: '{}' = '{}'", clean_field, clean_value);
-                    self.character.set(&clean_field, &clean_value);
-                    self.chat.add_system(&format!("✓ {} set", clean_field));
+
+                    if let Some(existing) = self.character.get(&clean_field) {
+                        // Field already exists — check if this is a duplicate or new info
+                        if existing == clean_value || clean_value.is_empty() {
+                            // Exact duplicate, skip
+                            tracing::info!("Skipping duplicate lock_field: '{}'", clean_field);
+                        } else {
+                            // New info — append to existing
+                            let merged = format!("{}; {}", existing, clean_value);
+                            self.character.set(&clean_field, &merged);
+                            tracing::info!("Appending to field: '{}' += '{}'", clean_field, clean_value);
+                            if seen_fields.insert(clean_field.clone()) {
+                                self.chat.add_system(&format!("✓ adding to {}", clean_field));
+                            }
+                        }
+                    } else {
+                        // New field
+                        self.character.set(&clean_field, &clean_value);
+                        tracing::info!("Locking field: '{}' = '{}'", clean_field, clean_value);
+                        if seen_fields.insert(clean_field.clone()) {
+                            self.chat.add_system(&format!("✓ {} set", clean_field));
+                        }
+                    }
                 }
                 ToolCall::SuggestOptions {
                     field,

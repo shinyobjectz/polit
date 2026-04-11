@@ -311,19 +311,20 @@ class GeopoliticalLayer(SimulationLayer):
         self._model.step()
 
         # 3. Compute aggregated outputs
-        foreign_power_deltas: dict[str, dict] = {}
+        # Format as list of {country, alignment_delta, stability_delta, trade_delta}
+        # to match Rust's Vec<ForeignPowerDelta> struct.
+        foreign_power_deltas: list[dict] = []
         total_imports = 0.0
         total_exports = 0.0
         migration_pressure: dict[str, float] = {}
 
         for agent in self._model.agents:
-            foreign_power_deltas[agent.name] = {
-                "alignment": agent.alignment,
-                "stability": agent.stability,
-                "military": agent.military,
-                "trade_imports": agent.trade_with_us["imports"],
-                "trade_exports": agent.trade_with_us["exports"],
-            }
+            foreign_power_deltas.append({
+                "country": agent.name,
+                "alignment_delta": agent.alignment,
+                "stability_delta": agent.stability,
+                "trade_delta": agent.trade_with_us["exports"] - agent.trade_with_us["imports"],
+            })
             total_imports += agent.trade_with_us["imports"]
             total_exports += agent.trade_with_us["exports"]
             migration_pressure[agent.name] = compute_migration_pressure(agent)

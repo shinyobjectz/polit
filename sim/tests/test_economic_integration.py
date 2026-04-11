@@ -6,6 +6,7 @@ within and across ticks.
 
 from __future__ import annotations
 
+import json
 import msgpack
 import pytest
 
@@ -60,7 +61,7 @@ def _run_simulation(
         ws_bytes = msgpack.packb(world)
         ev_bytes = msgpack.packb(events_by_tick.get(week, []))
 
-        delta = msgpack.unpackb(tick(ws_bytes, ev_bytes), raw=False)
+        delta = json.loads(tick(ws_bytes, ev_bytes))
         deltas.append(delta)
 
         # Accumulate macro state for next tick (as Rust does)

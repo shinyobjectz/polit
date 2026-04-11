@@ -42,6 +42,7 @@ pub struct CorporateAction {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WorldStateDelta {
     // Macro
     pub gdp_growth_delta: f64,

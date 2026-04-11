@@ -18,6 +18,7 @@ pub struct MacroSnapshot {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct WorldStateSnapshot {
     pub week: u32,
+    #[serde(rename = "macro")]
     pub macro_state: MacroSnapshot,
     pub counties: HashMap<String, serde_json::Value>,
 }
@@ -60,9 +61,11 @@ impl SimBridge {
         world_state: &WorldStateSnapshot,
         events: &[SimEvent],
     ) -> Result<WorldStateDelta, SimBridgeError> {
-        let ws_bytes = rmp_serde::to_vec(world_state)
+        // Use to_vec_named so structs serialize as maps ({"key": val})
+        // not positional arrays ([val1, val2]) — Python expects dicts.
+        let ws_bytes = rmp_serde::to_vec_named(world_state)
             .map_err(|e| SimBridgeError::Serialize(e.to_string()))?;
-        let ev_bytes = rmp_serde::to_vec(events)
+        let ev_bytes = rmp_serde::to_vec_named(events)
             .map_err(|e| SimBridgeError::Serialize(e.to_string()))?;
 
         Python::with_gil(|py| {
@@ -77,12 +80,14 @@ impl SimBridge {
                 .call_method1("tick", (ws_py, ev_py))
                 .map_err(|e| SimBridgeError::PythonCall(e.to_string()))?;
 
-            let result_bytes: &[u8] = result
-                .downcast::<PyBytes>()
-                .map_err(|e| SimBridgeError::PythonReturn(e.to_string()))?
-                .as_bytes();
+            // Python returns JSON string (easier interop than msgpack —
+            // rmp_serde defaults to positional arrays for struct deserialization
+            // but Python sends maps with string keys).
+            let result_str: &str = result
+                .extract()
+                .map_err(|e| SimBridgeError::PythonReturn(e.to_string()))?;
 
-            rmp_serde::from_slice(result_bytes)
+            serde_json::from_str(result_str)
                 .map_err(|e| SimBridgeError::Deserialize(e.to_string()))
         })
     }
