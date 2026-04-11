@@ -10,6 +10,7 @@ dependencies = [
     "msgpack",
     "census",
     "us",
+    "requests",
 ]
 
 [project.optional-dependencies]
