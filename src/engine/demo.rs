@@ -5,7 +5,6 @@ use super::channels::{GameChannels, UiCommand, UiMessage};
 use super::GameState;
 use crate::engine::components::Relationship;
 use crate::engine::world;
-use crate::persistence::{self, CF_CHARACTERS, CF_RELATIONSHIPS, CF_WORLD_STATE};
 use crate::systems::dice;
 
 /// Run the demo walkthrough on the game thread.
@@ -55,11 +54,13 @@ pub fn run_demo(mut state: GameState, ch: GameChannels) {
     ch.send(UiMessage::Narrate("ECS world has 3 entities with Identity, PoliticalRole, Personality, Ideology, Stats, Health, Goals components.".into()));
     thread::sleep(pause);
 
-    // === 2. RocksDB Persistence ===
-    ch.send(UiMessage::PhaseHeader("2. RocksDB Persistence".into()));
+    // === 2. Social Graph (in-memory) ===
+    ch.send(UiMessage::PhaseHeader(
+        "2. Social Graph — In-Memory State".into(),
+    ));
     thread::sleep(short);
 
-    // Write relationships
+    // Show relationship data
     let rel = Relationship {
         trust: 45,
         respect: 60,
@@ -77,11 +78,17 @@ pub fn run_demo(mut state: GameState, ch: GameChannels) {
     };
 
     state
-        .db
-        .put(CF_RELATIONSHIPS, "player:davis", &rel)
-        .unwrap();
+        .social
+        .add_character("player", "Alex Rivera", true);
+    state
+        .social
+        .add_character("davis", "Councilwoman Davis", false);
+    state
+        .social
+        .add_character("kowalski", "Chief Kowalski", false);
+    state.social.set_relationship("player", "davis", rel);
     ch.send(UiMessage::Success(
-        "Wrote player→Davis relationship to RocksDB".into(),
+        "Set player→Davis relationship in social graph".into(),
     ));
 
     let hostile_rel = Relationship {
@@ -90,53 +97,50 @@ pub fn run_demo(mut state: GameState, ch: GameChannels) {
         ..Relationship::default()
     };
     state
-        .db
-        .put(CF_RELATIONSHIPS, "player:kowalski", &hostile_rel)
-        .unwrap();
+        .social
+        .set_relationship("player", "kowalski", hostile_rel);
     ch.send(UiMessage::Success(
-        "Wrote player→Kowalski relationship to RocksDB".into(),
+        "Set player→Kowalski relationship in social graph".into(),
     ));
     thread::sleep(short);
 
     // Read back
-    let read_rel: Relationship = state
-        .db
-        .get(CF_RELATIONSHIPS, "player:davis")
-        .unwrap()
-        .unwrap();
-    ch.send(UiMessage::Narrate(format!(
-        "Read back Davis relationship: trust={}, respect={}, debt={}",
-        read_rel.trust, read_rel.respect, read_rel.debt
-    )));
+    if let Some(read_rel) = state.social.get_relationship("player", "davis") {
+        ch.send(UiMessage::Narrate(format!(
+            "Read back Davis relationship: trust={}, respect={}, debt={}",
+            read_rel.trust, read_rel.respect, read_rel.debt
+        )));
+    }
 
-    // Prefix scan
-    let all_rels: Vec<(String, Relationship)> =
-        state.db.scan_prefix(CF_RELATIONSHIPS, "player:").unwrap();
     ch.send(UiMessage::Narrate(format!(
-        "Prefix scan 'player:' → {} relationships found",
-        all_rels.len()
-    )));
-    thread::sleep(short);
-
-    // All column families
-    ch.send(UiMessage::Narrate(format!(
-        "Column families: {:?}",
-        persistence::Database::column_families()
+        "Social graph: {} characters tracked",
+        state.social.character_count()
     )));
     thread::sleep(pause);
 
-    // === 3. Snapshot Save System ===
-    ch.send(UiMessage::PhaseHeader("3. Snapshot Save System".into()));
+    // === 3. File-Based Save System ===
+    ch.send(UiMessage::PhaseHeader("3. File-Based Save System".into()));
     thread::sleep(short);
 
-    state.db.put(CF_WORLD_STATE, "week", &1u32).unwrap();
-    state.db.put(CF_WORLD_STATE, "year", &2024u32).unwrap();
-    match state.db.create_snapshot("demo_save") {
-        Ok(path) => ch.send(UiMessage::Success(format!(
-            "Snapshot saved to: {}",
-            path.display()
-        ))),
-        Err(e) => ch.send(UiMessage::Warning(format!("Snapshot failed: {}", e))),
+    if let Some(home) = std::env::var_os("HOME") {
+        let saves_dir = std::path::PathBuf::from(home).join(".polit/saves");
+        let current = saves_dir.join("current");
+        let dest = saves_dir.join("demo_save");
+        if current.exists() {
+            match crate::state::GameStateFs::open(&current)
+                .and_then(|fs| fs.save_as(&dest))
+            {
+                Ok(()) => ch.send(UiMessage::Success(format!(
+                    "Save copied to: {}",
+                    dest.display()
+                ))),
+                Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+            }
+        } else {
+            ch.send(UiMessage::Narrate(
+                "No current save to snapshot (start a new campaign first).".into(),
+            ));
+        }
     }
     thread::sleep(pause);
 
@@ -318,9 +322,11 @@ pub fn run_demo(mut state: GameState, ch: GameChannels) {
         "  ✓ ECS World (bevy_ecs 0.15 standalone)".into(),
     ));
     ch.send(UiMessage::Success(
-        "  ✓ RocksDB (11 column families, CRUD, prefix scan)".into(),
+        "  ✓ Social graph (in-memory, YAML persistence)".into(),
     ));
-    ch.send(UiMessage::Success("  ✓ Snapshot saves".into()));
+    ch.send(UiMessage::Success(
+        "  ✓ File-based saves".into(),
+    ));
     ch.send(UiMessage::Success(
         "  ✓ D20 dice system (skill checks, crits, modifiers)".into(),
     ));

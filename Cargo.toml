@@ -19,9 +19,6 @@ tui-scrollview = "0.6"
 throbber-widgets-tui = "0.8"
 tui-tree-widget = "0.22"
 
-# Database
-rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
-
 # Graph
 petgraph = "0.6"
 

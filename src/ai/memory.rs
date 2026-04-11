@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::persistence::{Database, CF_WORLD_STATE};
-
 /// A single conversation exchange (user + assistant)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Exchange {
@@ -12,7 +10,7 @@ pub struct Exchange {
     pub timestamp_week: u32,
 }
 
-/// Conversation memory stored in RocksDB
+/// Conversation memory with rolling context window
 /// Manages rolling context window with automatic summarization
 pub struct ConversationMemory {
     /// Recent exchanges kept in full
@@ -123,36 +121,6 @@ impl ConversationMemory {
     pub fn estimated_tokens(&self) -> usize {
         let history = self.build_history_block();
         history.len() / 4
-    }
-
-    /// Save to RocksDB
-    pub fn save(&self, db: &Database) -> Result<(), Box<dyn std::error::Error>> {
-        let data = serde_json::to_string(&self.recent)?;
-        db.put(CF_WORLD_STATE, "conversation_recent", &data)?;
-        db.put(CF_WORLD_STATE, "conversation_summary", &self.summary)?;
-        db.put(CF_WORLD_STATE, "conversation_turn", &self.turn_counter)?;
-        Ok(())
-    }
-
-    /// Load from RocksDB
-    pub fn load(db: &Database, max_recent: usize) -> Result<Self, Box<dyn std::error::Error>> {
-        let recent: Vec<Exchange> = db
-            .get::<String>(CF_WORLD_STATE, "conversation_recent")?
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-
-        let summary: String = db
-            .get::<String>(CF_WORLD_STATE, "conversation_summary")?
-            .unwrap_or_default();
-
-        let turn_counter: u32 = db.get(CF_WORLD_STATE, "conversation_turn")?.unwrap_or(0);
-
-        Ok(Self {
-            recent,
-            summary,
-            max_recent,
-            turn_counter,
-        })
     }
 
     /// Return the recent exchanges as a slice (for prompt building).

@@ -28,7 +28,6 @@ fn run_dawn(state: &mut GameState) {
     state.schedule.run(&mut state.world);
 }
 
-fn run_dusk(state: &mut GameState) {
-    // Resolve consequences, autosave
-    let _ = state.db.create_snapshot(&format!("week_{}", state.week));
+fn run_dusk(_state: &mut GameState) {
+    // Resolve consequences — file-based autosave handled by game_thread
 }

@@ -5,8 +5,7 @@ use std::time::Duration;
 
 #[test]
 fn test_game_state_creation() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let state = polit::engine::GameState::new().unwrap();
 
     assert_eq!(state.week, 1);
     assert_eq!(state.year, 2024);
@@ -16,8 +15,7 @@ fn test_game_state_creation() {
 
 #[test]
 fn test_ap_spending() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let mut state = polit::engine::GameState::new().unwrap();
 
     let initial = state.ap_current();
     state.spend_ap(2);
@@ -30,8 +28,7 @@ fn test_ap_spending() {
 
 #[test]
 fn test_ap_reset() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let mut state = polit::engine::GameState::new().unwrap();
 
     state.spend_ap(3);
     state.reset_ap(8);
@@ -41,8 +38,7 @@ fn test_ap_reset() {
 
 #[test]
 fn test_config_driven_ap() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let state = polit::engine::GameState::new().unwrap();
 
     // AP should match config
     assert_eq!(state.ap_current(), state.config.balance.action_points.local);
@@ -115,8 +111,7 @@ fn test_channel_status_update() {
 fn test_threaded_game_loop() {
     use polit::engine::channels::*;
 
-    let dir = tempfile::tempdir().unwrap();
-    let state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let state = polit::engine::GameState::new().unwrap();
 
     let channels = Channels::new();
     let (ui, game_ch) = channels.split();
@@ -149,8 +144,7 @@ fn test_threaded_game_loop() {
 fn test_ai_integration_in_game() {
     use polit::engine::channels::*;
 
-    let dir = tempfile::tempdir().unwrap();
-    let state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let state = polit::engine::GameState::new().unwrap();
 
     let channels = Channels::new();
     let (ui, game_ch) = channels.split();
@@ -180,8 +174,7 @@ fn test_ai_integration_in_game() {
 fn test_meet_command_costs_ap() {
     use polit::engine::channels::*;
 
-    let dir = tempfile::tempdir().unwrap();
-    let state = polit::engine::GameState::new(dir.path().to_str().unwrap()).unwrap();
+    let state = polit::engine::GameState::new().unwrap();
 
     let channels = Channels::new();
     let (ui, game_ch) = channels.split();

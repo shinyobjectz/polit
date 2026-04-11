@@ -19,6 +19,9 @@ headless:
 test:
 	cargo test
 
+test-e2e:
+	cargo test --test e2e_flow -- --nocapture
+
 test-verbose:
 	cargo test -- --nocapture
 
@@ -58,8 +61,8 @@ clean:
 	cargo clean
 
 clean-data:
-	rm -rf ~/.polit/game.db
-	@echo "Game database cleared. Config and saves preserved."
+	rm -rf ~/.polit/saves
+	@echo "Game saves cleared. Config preserved."
 
 clean-all:
 	rm -rf ~/.polit

@@ -83,7 +83,7 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             // Stop music before entering the game
             music.stop();
 
-            let state = GameState::new(paths.db.to_str().unwrap())?;
+            let state = GameState::new()?;
             let channels = Channels::new();
             let (ui_channels, game_channels) = channels.split();
             let game_handle = game_thread::spawn_game_thread(state, game_channels);
@@ -98,7 +98,7 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             // Stop music before entering the game
             music.stop();
 
-            let state = GameState::new(paths.db.to_str().unwrap())?;
+            let state = GameState::new()?;
             let channels = Channels::new();
             let (ui_channels, game_channels) = channels.split();
             let game_handle = game_thread::spawn_game_thread(state, game_channels);
@@ -174,7 +174,7 @@ pub fn run_app_with_provider(
     eprintln!("Ready.");
     let provider: Box<dyn crate::ai::AiProvider> = Box::new(game_provider);
 
-    let state = GameState::with_provider(paths.db.to_str().unwrap(), provider)?;
+    let state = GameState::with_provider(provider)?;
     let channels = Channels::new();
     let (ui_channels, game_channels) = channels.split();
     let game_handle = game_thread::spawn_game_thread(state, game_channels);
@@ -189,7 +189,7 @@ pub fn run_app_with_provider(
 /// Launch directly into demo mode (skips title screen)
 pub fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;
-    let state = GameState::new(paths.db.to_str().unwrap())?;
+    let state = GameState::new()?;
     let channels = Channels::new();
     let (ui_channels, game_channels) = channels.split();
 

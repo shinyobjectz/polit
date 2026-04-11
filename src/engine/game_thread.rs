@@ -83,14 +83,9 @@ fn interactive_loop_ref(state: &mut GameState, ch: &GameChannels) {
                             Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
                         }
                     } else {
-                        // Fallback to RocksDB snapshot
-                        match state.db.create_snapshot(&name) {
-                            Ok(path) => ch.send(UiMessage::Success(format!(
-                                "Game saved: {}",
-                                path.display()
-                            ))),
-                            Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
-                        }
+                        ch.send(UiMessage::Warning(
+                            "No current save to copy.".into(),
+                        ));
                     }
                 }
             },
@@ -282,11 +277,20 @@ fn run_dusk(state: &mut GameState, ch: &GameChannels) {
 
     ch.send(UiMessage::System("Resolving consequences...".into()));
 
-    // Autosave
-    let save_name = format!("autosave_w{}_y{}", state.week, state.year);
-    match state.db.create_snapshot(&save_name) {
-        Ok(_) => ch.send(UiMessage::System("Autosaved.".into())),
-        Err(e) => ch.send(UiMessage::Warning(format!("Autosave failed: {}", e))),
+    // File-based autosave
+    if let Some(home) = std::env::var_os("HOME") {
+        let saves_dir = std::path::PathBuf::from(home).join(".polit/saves");
+        let current = saves_dir.join("current");
+        let save_name = format!("autosave_w{}_y{}", state.week, state.year);
+        let dest = saves_dir.join(&save_name);
+        if current.exists() {
+            match crate::state::GameStateFs::open(&current)
+                .and_then(|fs| fs.save_as(&dest))
+            {
+                Ok(()) => ch.send(UiMessage::System("Autosaved.".into())),
+                Err(e) => ch.send(UiMessage::Warning(format!("Autosave failed: {}", e))),
+            }
+        }
     }
 }
 
@@ -532,9 +536,20 @@ fn handle_slash_command(state: &mut GameState, ch: &GameChannels, cmd: &str, arg
             } else {
                 args.join("_")
             };
-            match state.db.create_snapshot(&name) {
-                Ok(path) => ch.send(UiMessage::Success(format!("Saved: {}", path.display()))),
-                Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+            if let Some(home) = std::env::var_os("HOME") {
+                let saves_dir = std::path::PathBuf::from(home).join(".polit/saves");
+                let current = saves_dir.join("current");
+                let dest = saves_dir.join(&name);
+                if current.exists() {
+                    match crate::state::GameStateFs::open(&current)
+                        .and_then(|fs| fs.save_as(&dest))
+                    {
+                        Ok(()) => ch.send(UiMessage::Success(format!("Saved: {}", name))),
+                        Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+                    }
+                } else {
+                    ch.send(UiMessage::Warning("No current save to copy.".into()));
+                }
             }
         }
         "load" => {

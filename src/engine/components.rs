@@ -306,7 +306,7 @@ pub struct EconomicState {
     pub gini_coefficient: f64,
 }
 
-// ===== RELATIONSHIP (edge data, stored in RocksDB not as ECS component) =====
+// ===== RELATIONSHIP (edge data, stored in social graph not as ECS component) =====
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relationship {

@@ -10,8 +10,6 @@ pub mod world;
 
 use bevy_ecs::prelude::*;
 
-use crate::persistence::Database;
-
 /// Core game state
 pub struct GameState {
     pub world: World,
@@ -19,7 +17,6 @@ pub struct GameState {
     pub week: u32,
     pub year: u32,
     pub phase: GamePhase,
-    pub db: Database,
     pub config: config::GameConfig,
     pub ai: crate::ai::AiHarness,
     pub social: crate::systems::social_graph::SocialGraph,
@@ -66,10 +63,8 @@ pub enum EventPhaseType {
 impl GameState {
     /// Create with a specific AI provider
     pub fn with_provider(
-        db_path: &str,
         provider: Box<dyn crate::ai::AiProvider>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let db = Database::open(db_path)?;
         let mut world = World::new();
         let schedule = Schedule::default();
 
@@ -89,7 +84,6 @@ impl GameState {
             week: 1,
             year: 2024,
             phase: GamePhase::TitleScreen,
-            db,
             config,
             ai: crate::ai::AiHarness::new(provider),
             ap_current: ap,
@@ -105,8 +99,7 @@ impl GameState {
     }
 
     /// Create with mock AI (default)
-    pub fn new(db_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let db = Database::open(db_path)?;
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let mut world = World::new();
         let schedule = Schedule::default();
 
@@ -126,7 +119,6 @@ impl GameState {
             week: 1,
             year: 2024,
             phase: GamePhase::TitleScreen,
-            db,
             config,
             ai: crate::ai::AiHarness::mock(),
             ap_current: ap,
@@ -168,8 +160,7 @@ pub struct GameClock {
 
 /// Run the game without UI (for testing)
 pub fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = tempfile::tempdir()?;
-    let mut state = GameState::new(dir.path().to_str().unwrap())?;
+    let mut state = GameState::new()?;
     state.phase = GamePhase::Dawn;
 
     tracing::info!("Headless mode: running 1 turn");

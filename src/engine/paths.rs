@@ -3,7 +3,6 @@ use std::path::PathBuf;
 /// All game paths resolved from a single home directory (~/.polit)
 pub struct GamePaths {
     pub root: PathBuf,
-    pub db: PathBuf,
     pub saves: PathBuf,
     pub config: PathBuf,
     pub log: PathBuf,
@@ -22,7 +21,6 @@ impl GamePaths {
         };
 
         let paths = Self {
-            db: root.join("game.db"),
             saves: root.join("saves"),
             config: root.join("config"),
             log: root.join("polit.log"),

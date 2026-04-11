@@ -1,10 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::persistence::{Database, CF_WORLD_STATE};
-
 /// Virtual filesystem for the agent — stores markdown files, notes,
-/// scripts, and working documents in RocksDB.
+/// scripts, and working documents.
 /// The agent can read/write these to maintain its own persistent memory.
 pub struct VirtualFs {
     /// In-memory cache of files
@@ -83,19 +81,23 @@ impl VirtualFs {
         self.files.contains_key(path)
     }
 
-    /// Save all files to RocksDB
-    pub fn save(&self, db: &Database) -> Result<(), Box<dyn std::error::Error>> {
-        let data = serde_json::to_string(&self.files)?;
-        db.put(CF_WORLD_STATE, "vfs_files", &data)?;
+    /// Save all files to a YAML file in the given directory.
+    pub fn save_to_dir(&self, dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+        std::fs::create_dir_all(dir)?;
+        let yaml = serde_yaml::to_string(&self.files)?;
+        std::fs::write(dir.join("vfs.yaml"), yaml)?;
         Ok(())
     }
 
-    /// Load from RocksDB
-    pub fn load(db: &Database) -> Result<Self, Box<dyn std::error::Error>> {
-        let files: HashMap<String, VfsFile> = db
-            .get::<String>(CF_WORLD_STATE, "vfs_files")?
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+    /// Load from a YAML file in the given directory.
+    pub fn load_from_dir(dir: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let vfs_path = dir.join("vfs.yaml");
+        let files = if vfs_path.exists() {
+            let content = std::fs::read_to_string(&vfs_path)?;
+            serde_yaml::from_str(&content)?
+        } else {
+            HashMap::new()
+        };
         Ok(Self { files })
     }
 
@@ -156,5 +158,19 @@ mod tests {
         vfs.write("file.md", "version 1", 1);
         vfs.write("file.md", "version 2", 2);
         assert_eq!(vfs.read("file.md"), Some("version 2"));
+    }
+
+    #[test]
+    fn test_yaml_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut vfs = VirtualFs::new();
+        vfs.write("notes/test.md", "hello world", 1);
+        vfs.write("log.md", "week 1", 1);
+        vfs.save_to_dir(dir.path()).unwrap();
+
+        let loaded = VirtualFs::load_from_dir(dir.path()).unwrap();
+        assert_eq!(loaded.file_count(), 2);
+        assert_eq!(loaded.read("notes/test.md"), Some("hello world"));
+        assert_eq!(loaded.read("log.md"), Some("week 1"));
     }
 }
