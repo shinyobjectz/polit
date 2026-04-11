@@ -227,6 +227,12 @@ impl AiProvider for CandleProvider {
 
         // Try native Gemma 4 format first
         let native = super::native_format::parse_response(&output);
+        tracing::debug!(
+            "Native parse result: narration={} chars, {} tools, reasoning={}",
+            native.narration.len(),
+            native.tool_calls.len(),
+            native.reasoning.is_some(),
+        );
         if !native.tool_calls.is_empty() || native.narration.len() > 10 {
             tracing::info!(
                 "Native parse: narration={} chars, {} tool calls, reasoning={}",

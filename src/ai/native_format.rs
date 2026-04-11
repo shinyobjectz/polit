@@ -201,6 +201,9 @@ pub fn parse_response(raw: &str) -> ParsedResponse {
 
     let narration = narration_parts.join("\n\n");
 
+    // Final cleanup: strip any remaining special tokens that leaked through
+    let narration = strip_all_special_tokens(&narration);
+
     ParsedResponse {
         reasoning,
         narration,
@@ -208,12 +211,53 @@ pub fn parse_response(raw: &str) -> ParsedResponse {
     }
 }
 
+/// Strip ALL known special tokens from text — last line of defense
+fn strip_all_special_tokens(text: &str) -> String {
+    let mut s = text.to_string();
+    // Gemma 4 tokens
+    for token in &[
+        "<|channel>", "<channel|>", "<|tool_call>", "<tool_call|>",
+        "<|tool_result>", "<tool_result|>", "<|tool>", "<tool|>",
+        "<|turn>", "<turn|>", "<|think|>", "<bos>", "<eos>",
+        "<|turn>model", "<|turn>user",
+        "<start_of_turn>", "<end_of_turn>",
+        // Alternate formats
+        "<execute_tool>", "</execute_tool>",
+    ] {
+        s = s.replace(token, "");
+    }
+    // Strip "thought\nThinking Process:" if it leaked
+    if s.starts_with("thought\n") {
+        s = s.strip_prefix("thought\n").unwrap_or(&s).to_string();
+    }
+    if s.starts_with("Thinking Process:") {
+        s = String::new(); // This is reasoning, not narration
+    }
+    // Strip "call:" prefixed lines (tool call fragments)
+    let lines: Vec<&str> = s.lines()
+        .filter(|l| !l.trim_start().starts_with("call:"))
+        .filter(|l| !l.trim_start().starts_with("\"value\":"))
+        .filter(|l| !l.trim_start().starts_with("\"name\":"))
+        .collect();
+    s = lines.join("\n");
+    s.trim().to_string()
+}
+
 /// Parse a single tool call from native format.
 /// Format: `call:func_name{key1:<|"|>val1<|"|>,key2:<|"|>val2<|"|>}`
 fn parse_tool_call(raw: &str) -> Option<ToolCall> {
-    let s = raw.strip_prefix("call:").unwrap_or(raw);
+    let s = raw.strip_prefix("call:").unwrap_or(raw).trim();
 
-    // Find the function name (everything before the first '{')
+    // Try JSON format first (model sometimes puts JSON inside tool_call tags)
+    if s.starts_with('{') || s.contains("\"name\"") {
+        if let Some(json_str) = extract_json_from_text(s) {
+            if let Some(tool) = parse_execute_tool_json(&json_str) {
+                return Some(tool);
+            }
+        }
+    }
+
+    // Native format: func_name{key1:<|"|>val1<|"|>}
     let brace_idx = s.find('{')?;
     let func_name = s[..brace_idx].trim();
     let args_str = &s[brace_idx + 1..];
@@ -303,6 +347,34 @@ fn parse_tool_call(raw: &str) -> Option<ToolCall> {
             None
         }
     }
+}
+
+/// Extract the first JSON object from text
+fn extract_json_from_text(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let bytes = text.as_bytes();
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut escape = false;
+
+    for i in start..bytes.len() {
+        let c = bytes[i] as char;
+        if escape { escape = false; continue; }
+        if c == '\\' && in_string { escape = true; continue; }
+        if c == '"' { in_string = !in_string; continue; }
+        if in_string { continue; }
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(text[start..=i].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Parse the <execute_tool> JSON format the model sometimes uses.
