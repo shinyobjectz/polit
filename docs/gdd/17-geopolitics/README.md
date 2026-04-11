@@ -147,3 +147,43 @@ Mole hunt arcs. If YOU are recruitment target: accept (become foreign asset — 
 
 ### US Espionage Abroad
 Corporate, military, political espionage. Creates info entities on both sides.
+
+## Python Simulation: Geopolitical Layer
+
+### Mesa CountryAgent
+
+12 countries modeled as Mesa agents:
+
+- **Tier 1** (6): China, Russia, UK, EU, Israel, Iran — react to all US policy changes
+- **Tier 2** (6): India, Japan, Saudi Arabia, Brazil, Mexico, South Korea — react to major changes only
+
+### Trade Graph
+
+Bilateral import/export volumes tracked per country pair. Modified by events:
+
+- **Tariff**: Reduces bilateral trade volume proportionally
+- **Sanction**: Blocks trade in targeted sectors
+- **Trade deal**: Increases bilateral volume with a growth multiplier
+
+### Migration (Gravity Model)
+
+```
+migration_pressure = (push_factors * pull_factors) / barrier
+```
+
+- **Push**: Economic distress, conflict, instability in source country
+- **Pull**: Economic opportunity, policy openness in US
+- **Barrier**: Immigration policy strictness, geographic distance
+
+### Event-Driven Reactions
+
+Country agents respond to simulation events:
+
+| Event Type | Tier 1 Response | Tier 2 Response |
+|-----------|----------------|-----------------|
+| Conflict | Military posture shift, alliance check | Trade impact only |
+| Sanction | Retaliation, trade rerouting | Adjust trade if affected |
+| AllianceShift | Realign relationships | Observe |
+| Tariff | Counter-tariff, negotiate | Adjust exports |
+
+Reactions are returned in `WorldStateDelta` and converted to ECS events by the Rust game thread.

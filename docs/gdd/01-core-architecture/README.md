@@ -192,3 +192,67 @@ polit/
 | Audio | CPAL mic input / TTS output | cpal callbacks |
 
 Communication via crossbeam channels. UI never freezes during AI inference.
+
+## Python Simulation Stack
+
+### PyO3 Bridge
+
+A sixth async thread — the **sim thread** — hosts a Python interpreter via PyO3 (behind the `simulation` Cargo feature flag). It runs alongside the existing UI/Game/AI/IO/Audio threads:
+
+| Thread | Responsibility | Framework |
+|--------|---------------|-----------|
+| Sim | Python simulation tick (once per Dawn Phase) | PyO3 + tokio::spawn_blocking |
+
+### Data Contract
+
+Rust and Python communicate via MessagePack (`rmp-serde`):
+
+1. Rust serializes a `WorldStateSnapshot` + `SimEvents` into MessagePack bytes
+2. Python's `sim/host.py` receives and deserializes via `msgpack`
+3. Python runs 8 simulation layers and returns a `WorldStateDelta`
+4. Rust deserializes the delta and applies it to ECS world state
+
+### Simulation Layers
+
+The Python host executes 8 layers in order, each Dawn Phase tick:
+
+| Order | Layer | Agent Framework | Purpose |
+|-------|-------|----------------|---------|
+| 1 | Macro | Direct model | GDP, inflation, unemployment, rates (PyFRB/US-inspired) |
+| 2 | Sectors | Mesa SectorAgent | 9 industry sectors, output and employment |
+| 3 | Markets | Direct model | Sector indices, commodities, bonds |
+| 4 | Household | Direct model | Quintile-based income, tax, benefits |
+| 5 | Political | Direct model | Approval, issue salience, ideology shifts |
+| 6 | Media | Mesa MediaAgent | News amplification, belief propagation |
+| 7 | Corporate | Mesa CorporateAgent | Lobby, donate, retaliate based on policy |
+| 8 | Geopolitical | Mesa CountryAgent | Trade, migration, foreign power reactions |
+
+### Project Layout
+
+```
+sim/
+├─ host.py                 Entry point called by PyO3 bridge
+├─ models/
+│  ├─ macro_economy.py     Keynesian multiplier model
+│  ├─ sector_economy.py    Mesa sector agents
+│  ├─ financial_markets.py Indices, commodities, bonds
+│  ├─ household.py         Quintile microsim
+│  ├─ political.py         Approval and salience
+│  ├─ media.py             Media agent amplification
+│  ├─ corporate.py         Corporate reaction agents
+│  └─ geopolitical.py      Country agents, trade, migration
+├─ data/
+│  └─ population_cache_{year}.msgpack
+├─ tests/                  156 tests across 10 files
+└─ requirements.txt        mesa, census, msgpack, etc.
+```
+
+### Dependencies
+
+| Crate / Package | Purpose |
+|-----------------|---------|
+| `pyo3` (optional, `simulation` feature) | Rust-Python bridge |
+| `rmp-serde` | MessagePack serialization |
+| `mesa` (Python) | Agent-based modeling framework |
+| `census` (Python) | Census API client for population bootstrap |
+| `msgpack` (Python) | MessagePack deserialization |

@@ -108,3 +108,53 @@ These chains are defined in **policy effect templates** (TOML/Rhai) — moddable
 | World Bank | Global indicators | Geopolitical model baseline |
 
 See [Data Pipeline](../12-data-pipeline/README.md) for ingestion details.
+
+## Python Simulation Implementation
+
+### Layer 2: Macro Model (MacroEconomyLayer)
+
+The macro model is now powered by a simplified PyFRB/US-inspired model running in Python via the sim thread:
+
+- **Keynesian multipliers**: Government spending and tax changes propagate through GDP with configurable multipliers
+- **Phillips curve**: Inverse unemployment-inflation relationship drives CPI dynamics
+- **Okun's law**: GDP gap maps to unemployment changes
+- **Taylor rule**: Federal funds rate responds to inflation and output gaps
+- Policy effects are emergent from the model equations, not hand-specified lag tables
+
+### Layer 3: Demographic Model (HouseholdLayer)
+
+Household microsimulation with quintile-based calculations:
+
+- 5 income quintiles with distinct tax rates and benefit eligibility
+- Tax burden computed per quintile using effective rates
+- Transfer payments (SNAP, EITC, unemployment) flow to qualifying quintiles
+- County-level industry weights map sector output to household income
+- Consumer confidence derived from real income changes
+
+### Sector Economy (Mesa SectorAgent)
+
+9 sector agents matching the GDD 16 sector interest table:
+
+- Energy, Tech, Pharma, Defense, Finance, Manufacturing, Agriculture, Healthcare, Retail
+- Each agent computes output and employment based on macro conditions
+- Policy events (tax, regulation, subsidy) modify sector-specific multipliers
+- Sector output feeds into household income via county industry weights
+
+### Financial Markets (MarketLayer)
+
+- Sector stock indices derived from sector output and growth
+- Commodity prices (oil, food, metals) respond to supply/demand shocks
+- Bond yields track federal funds rate with term premium
+- Market sentiment amplifies moves during crises
+
+### Cross-Layer Data Flow
+
+```
+Macro (GDP, rates, inflation)
+  └─► Sectors (output per industry, employment)
+       └─► Markets (indices, commodities)
+       └─► Households (income = county_weight × sector_output)
+            └─► Political (approval from economic conditions)
+```
+
+Policy causality chains are emergent: a minimum wage increase flows through sector costs, household income, consumer spending, and GDP — not through pre-specified effect tables.

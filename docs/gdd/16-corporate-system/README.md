@@ -113,3 +113,30 @@ Lobbyist NPCs actively seek meetings. They offer campaign donations, endorsement
 | Census CBP | Private sector: establishments + employees by sector by county |
 | BEA | Industry output by region |
 | BLS | Employment by industry by area |
+
+## Python Simulation: Corporate Layer
+
+### Mesa CorporateAgent
+
+9 sector agents initialized from the sector interest lookup table above, running as Mesa agents in the Python simulation stack.
+
+### Policy Impact Calculation
+
+```
+impact = sum(+1 for match in wants, -1 for match in opposes)
+if bill targets this sector specifically: impact *= 2
+reaction_intensity = impact * lobby_intensity
+```
+
+### Reaction Matrix (WorldStateDelta Actions)
+
+| Reaction Intensity | Action | Approval Effect |
+|-------------------|--------|-----------------|
+| Strongly positive | Donation to player | +0.3 |
+| Mildly negative | Lobby against | -0.1 to -0.3 |
+| Strongly negative | Attack ads | -0.3 to -0.5 |
+| Nuclear | Threaten relocation, fund challenger | -0.5 |
+
+### Integration with Rust
+
+Corporate actions are returned in the `WorldStateDelta` as structured action records. The Rust game thread converts these into NPC actions: lobbyist meeting requests, PAC donations, attack ad events, and plant closure threats become ECS events flowing through the normal event bus.

@@ -230,3 +230,37 @@ Model weights NOT bundled — downloaded at runtime from Hugging Face Hub.
 | `cargo bench` | Performance benchmarks |
 | `polit-data fetch --all` | Refresh real-world data |
 | `polit-sdk validate game/` | Validate scenario data |
+| `make venv` | Create Python virtual environment for simulation |
+| `make venv-update` | Update Python dependencies in venv |
+| `make sim-test` | Run Rust bridge tests + Python pytest suite |
+
+## Python Simulation Stack
+
+### Feature Flag
+
+The Python simulation stack is behind the `simulation` Cargo feature flag:
+
+```toml
+[dependencies]
+pyo3 = { version = "0.24", optional = true }
+rmp-serde = "1"
+
+[features]
+simulation = ["pyo3"]
+```
+
+### macOS Setup
+
+Homebrew Python requires the `PYO3_PYTHON` environment variable:
+
+```bash
+export PYO3_PYTHON=$(brew --prefix python@3.12)/bin/python3.12
+```
+
+### Performance Target
+
+Python tick budget: **<500ms** for all 8 simulation layers (macro, sectors, markets, household, political, media, corporate, geopolitical). Current measured time is approximately 0.5s with all 156 tests passing.
+
+### Test Suite
+
+156 Python tests across 10 test files covering all simulation layers, the host entry point, and MessagePack serialization round-trips. Run via `make sim-test` which executes both `cargo test --features simulation` (Rust bridge tests) and `pytest sim/tests/` (Python unit tests).

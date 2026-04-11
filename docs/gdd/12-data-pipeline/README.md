@@ -112,3 +112,38 @@ When accuracy mode is STRICT or MODERATE:
 | `polit-data status` | Show cache freshness |
 | `polit-data export --scenario modern_usa` | Bake into scenario files |
 | `polit-data validate` | Cross-reference integrity |
+
+## Python Simulation Bootstrap
+
+### Census API Population Seeding
+
+The `census` Python package replaces the originally planned `rti_synth_pop` for population bootstrapping:
+
+- Pulls ACS 5-year data: population, median income, age distribution, race distribution per county
+- Provides the demographic foundation for HouseholdLayer quintile calculations
+- Requires a Census API key (set `CENSUS_API_KEY` env var)
+
+### Game Start Pipeline
+
+```
+Census API → county demographics → PolicyEngine baseline
+  → macro model init → Mesa agent init (sectors, media, corporate, countries)
+```
+
+1. Census data fetched and cached as MessagePack
+2. County demographics seed household quintile distributions
+3. PolicyEngine baseline sets initial tax/benefit parameters
+4. Macro model initialized from FRED snapshot or defaults
+5. Mesa agents created with sector, media, corporate, and country parameters
+
+### Fallback Synthetic Data
+
+When no Census API key is available:
+
+- 50 synthetic counties generated using national averages
+- Population, income, and demographic distributions use Census Bureau published national statistics
+- Sufficient for gameplay; real data provides geographic specificity
+
+### Cache
+
+Population data cached at `sim/data/population_cache_{year}.msgpack` to avoid repeated API calls. Cache is keyed by ACS year.

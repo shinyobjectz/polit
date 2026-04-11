@@ -127,3 +127,25 @@ Modified by:
 │  [+][-] Allocate  [R]ally  [A]d buy             │
 └─────────────────────────────────────────────────┘
 ```
+
+## Python Simulation: Election Inputs
+
+### compute_election_inputs()
+
+Vote calculation formula inputs are now grounded in simulation reality via `compute_election_inputs()`, called on-demand when Rust requests election data (not a per-tick layer).
+
+### ElectionInputs
+
+| Field | Source Layer | Description |
+|-------|-------------|-------------|
+| `ideology_distribution` | Political | Per-district left/center/right breakdown |
+| `turnout_propensity` | Political + Household | Base turnout adjusted by enthusiasm and income |
+| `economic_conditions` | Macro + Household | GDP growth, unemployment, real income changes |
+| `approval_ratings` | Political | Incumbent/candidate approval per district |
+| `issue_salience` | Political + Media | Which issues voters care about, media-amplified |
+| `swing_counties` | Political | Counties with narrow partisan margins |
+| `enthusiasm_gap` | Political | Differential mobilization between parties |
+
+### Integration
+
+The vote calculation formula itself is unchanged — ideology match, approval, campaign investment, endorsements, economic conditions, news cycle, turnout, debate performance, opponent strength, and dice roll all still apply. The difference is that these inputs now come from the running simulation rather than static data or simple formulas.

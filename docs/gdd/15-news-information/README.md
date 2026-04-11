@@ -144,3 +144,24 @@ Media Org Entity (ECS)
 ## Morning Briefing Integration
 
 Headlines organized by scope (national → local) with impact annotations. Intel section shows private information. Information tracker shows what you're monitoring.
+
+## Python Simulation: Media Layer
+
+### Mesa MediaAgent
+
+8 default media outlets modeled as Mesa agents, each with:
+
+- **reach**: audience size (0.0-1.0 fraction of population)
+- **credibility**: public trust in the outlet (0.0-1.0)
+- **editorial_lean**: political lean affecting story selection and framing
+
+### Amplification Mechanics
+
+- **Negativity bias**: Bad news (scandals, crises, failures) receives 3x amplification compared to good news (policy success, economic growth)
+- **Disinformation**: Foreign-sourced information entities receive a 0.3x credibility multiplier, reducing their impact on public belief
+- **Cognitive cascade**: When a scandal event fires, total media reach across all covering outlets determines the magnitude of approval impact
+
+### Architecture Split
+
+- **Knowledge graph**: Remains in Rust (petgraph) — information entity storage, knower tracking, source chains
+- **Belief propagation**: Runs in Python — media agents decide what to amplify, compute public_belief shifts, return belief deltas in WorldStateDelta
