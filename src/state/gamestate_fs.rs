@@ -1,7 +1,7 @@
 //! GameStateFs — reads and writes game state as YAML files on disk.
 //!
 //! Directory layout:
-//! ```
+//! ```text
 //! ~/.polit/saves/<save_name>/
 //! ├── character.yaml          # player character fields
 //! ├── world.yaml              # week, year, phase, AP
@@ -86,7 +86,7 @@ pub struct ToneFile {
 
 // ── NPC ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NpcEntry {
     pub id: String,
     pub name: String,
@@ -106,7 +106,7 @@ pub struct NpcIndex {
     pub npcs: Vec<NpcEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NpcFile {
     #[serde(flatten)]
     pub entry: NpcEntry,

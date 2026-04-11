@@ -11,8 +11,10 @@ use crate::ai::async_chat::{AiResponse, AsyncAiChat};
 use crate::ai::context::GameContext;
 use crate::ai::tools::ToolCall;
 use crate::ai::{AiProvider, DmMode};
+use crate::state::GameStateFs;
 
-/// Character data built up during creation
+/// Character data — thin wrapper around GameStateFs.
+/// All reads/writes go to character.yaml on disk.
 #[derive(Debug, Clone, Default)]
 pub struct CharacterData {
     pub fields: HashMap<String, String>,
@@ -28,7 +30,7 @@ impl CharacterData {
     }
 
     pub fn depth_percent(&self) -> u32 {
-        let total_fields = 11; // name, background, archetype, office, party, traits, family, motivation, rival, secret, tone
+        let total_fields = 11;
         let filled = self.fields.len() as u32;
         ((filled as f32 / total_fields as f32) * 100.0).min(100.0) as u32
     }
@@ -157,7 +159,8 @@ pub struct CharacterCreationScreen {
     thinking_start: std::time::Instant,
     creation_complete: bool,
     dm_question_count: u32,
-    show_sheet: bool, // Tab toggles character sheet overlay
+    show_sheet: bool,
+    save_fs: Option<GameStateFs>, // file-backed state
 }
 
 /// Tone instructions for character creation (passed as context.tone_instructions)
@@ -187,6 +190,7 @@ impl CharacterCreationScreen {
             creation_complete: false,
             dm_question_count: 0,
             show_sheet: false,
+            save_fs: None,
         }
     }
 
@@ -214,6 +218,23 @@ impl CharacterCreationScreen {
                         self.character.set("avatar_face", &avatar_face);
                         self.character
                             .set("avatar_color", &format!("{:?}", avatar_color));
+
+                        // Initialize file-backed save state
+                        if let Some(home) = std::env::var_os("HOME") {
+                            let save_path = std::path::PathBuf::from(home)
+                                .join(".polit/saves/current");
+                            if let Ok(fs) = GameStateFs::open(&save_path) {
+                                // Write initial character data
+                                let mut char_file = fs.read_character();
+                                char_file.name = full_name.clone();
+                                char_file.avatar_face = avatar_face.clone();
+                                char_file.avatar_color = format!("{:?}", avatar_color);
+                                let _ = fs.write_character(&char_file);
+                                let _ = fs.write_world(&crate::state::gamestate_fs::WorldFile::default());
+                                self.save_fs = Some(fs);
+                                tracing::info!("Save state initialized at {:?}", save_path);
+                            }
+                        }
 
                         // Request AI greeting via the agent (with memory + tools)
                         let ctx = self.build_creation_context();
@@ -358,23 +379,36 @@ impl CharacterCreationScreen {
                     let clean_field = field.trim_matches('"').trim().to_lowercase().replace(' ', "_");
                     let clean_value = value.trim_matches('"').trim().to_string();
 
-                    if let Some(existing) = self.character.get(&clean_field) {
-                        // Field already exists — check if this is a duplicate or new info
+                    let is_update = self.character.fields.contains_key(&clean_field);
+                    if is_update {
+                        let existing = self.character.get(&clean_field).unwrap().to_string();
                         if existing == clean_value || clean_value.is_empty() {
-                            // Exact duplicate, skip
                             tracing::info!("Skipping duplicate lock_field: '{}'", clean_field);
                         } else {
-                            // New info — append to existing
                             let merged = format!("{}; {}", existing, clean_value);
                             self.character.set(&clean_field, &merged);
+                            // Sync to disk
+                            if let Some(ref fs) = self.save_fs {
+                                let _ = fs.append_character_field(&clean_field, &clean_value);
+                            }
                             tracing::info!("Appending to field: '{}' += '{}'", clean_field, clean_value);
                             if seen_fields.insert(clean_field.clone()) {
                                 self.chat.add_system(&format!("✓ adding to {}", clean_field));
                             }
                         }
                     } else {
-                        // New field
                         self.character.set(&clean_field, &clean_value);
+                        // Sync to disk
+                        if let Some(ref fs) = self.save_fs {
+                            let _ = fs.set_character_field(&clean_field, &clean_value);
+                            // Also write tone.yaml when tone is set
+                            if clean_field == "tone" {
+                                let _ = fs.write_tone(&crate::state::gamestate_fs::ToneFile {
+                                    style: clean_value.clone(),
+                                    description: String::new(),
+                                });
+                            }
+                        }
                         tracing::info!("Locking field: '{}' = '{}'", clean_field, clean_value);
                         if seen_fields.insert(clean_field.clone()) {
                             self.chat.add_system(&format!("✓ {} set", clean_field));

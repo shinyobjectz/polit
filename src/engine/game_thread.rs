@@ -69,18 +69,50 @@ fn interactive_loop_ref(state: &mut GameState, ch: &GameChannels) {
             Some(UiCommand::SlashCommand { cmd, args }) => {
                 handle_slash_command(state, ch, &cmd, &args);
             }
-            Some(UiCommand::SaveGame(name)) => match state.db.create_snapshot(&name) {
-                Ok(path) => ch.send(UiMessage::Success(format!(
-                    "Game saved: {}",
-                    path.display()
-                ))),
-                Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+            Some(UiCommand::SaveGame(name)) => {
+                // File-based save: copy current save dir
+                if let Some(home) = std::env::var_os("HOME") {
+                    let saves_dir = std::path::PathBuf::from(home).join(".polit/saves");
+                    let current = saves_dir.join("current");
+                    let dest = saves_dir.join(&name);
+                    if current.exists() {
+                        match crate::state::GameStateFs::open(&current)
+                            .and_then(|fs| fs.save_as(&dest))
+                        {
+                            Ok(()) => ch.send(UiMessage::Success(format!("Saved: {}", name))),
+                            Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+                        }
+                    } else {
+                        // Fallback to RocksDB snapshot
+                        match state.db.create_snapshot(&name) {
+                            Ok(path) => ch.send(UiMessage::Success(format!(
+                                "Game saved: {}",
+                                path.display()
+                            ))),
+                            Err(e) => ch.send(UiMessage::Warning(format!("Save failed: {}", e))),
+                        }
+                    }
+                }
             },
             Some(UiCommand::LoadGame(name)) => {
-                ch.send(UiMessage::System(format!(
-                    "Loading save '{}' — not yet implemented",
-                    name
-                )));
+                if let Some(home) = std::env::var_os("HOME") {
+                    let save_path = std::path::PathBuf::from(home)
+                        .join(".polit/saves")
+                        .join(&name);
+                    if save_path.exists() {
+                        // Copy save to current
+                        let current = std::path::PathBuf::from(std::env::var_os("HOME").unwrap())
+                            .join(".polit/saves/current");
+                        match crate::state::GameStateFs::open(&save_path)
+                            .and_then(|fs| fs.save_as(&current))
+                        {
+                            Ok(()) => ch.send(UiMessage::Success(format!("Loaded: {}", name))),
+                            Err(e) => ch.send(UiMessage::Warning(format!("Load failed: {}", e))),
+                        }
+                    } else {
+                        ch.send(UiMessage::Warning(format!("Save '{}' not found", name)));
+                    }
+                }
             }
             None => {
                 thread::sleep(std::time::Duration::from_millis(10));
@@ -98,7 +130,24 @@ fn run_dawn(state: &mut GameState, ch: &GameChannels) {
     // Seed the social graph on first week
     if state.week == 1 && state.social.character_count() == 0 {
         use crate::engine::components::{Relationship, RelationshipType};
-        state.social.add_character("player", "Player", true);
+
+        // Load player name from save file if available
+        let player_name = if let Some(home) = std::env::var_os("HOME") {
+            let save_path = std::path::PathBuf::from(home).join(".polit/saves/current");
+            if let Ok(fs) = crate::state::GameStateFs::open(&save_path) {
+                let char_data = fs.read_character();
+                if char_data.name.is_empty() {
+                    "Player".to_string()
+                } else {
+                    char_data.name
+                }
+            } else {
+                "Player".to_string()
+            }
+        } else {
+            "Player".to_string()
+        };
+        state.social.add_character("player", &player_name, true);
         state
             .social
             .add_character("davis", "Councilwoman Davis", false);
@@ -507,18 +556,59 @@ fn handle_slash_command(state: &mut GameState, ch: &GameChannels, cmd: &str, arg
 // ===== AI CONTEXT =====
 
 fn build_context(state: &GameState) -> GameContext {
+    // Read character and tone from save files
+    let (player_name, player_office, tone) = if let Some(home) = std::env::var_os("HOME") {
+        let save_path = std::path::PathBuf::from(home).join(".polit/saves/current");
+        if let Ok(fs) = crate::state::GameStateFs::open(&save_path) {
+            let char_data = fs.read_character();
+            let name = if char_data.name.is_empty() {
+                "Player".to_string()
+            } else {
+                char_data.name
+            };
+            let office = char_data
+                .fields
+                .get("starting_office")
+                .cloned()
+                .unwrap_or_else(|| "City Council Member".into());
+            let tone_file = fs.read_tone();
+            let tone = if tone_file.style.is_empty() {
+                char_data
+                    .fields
+                    .get("tone")
+                    .cloned()
+                    .unwrap_or_else(|| "Realistic political drama. Grounded and human.".into())
+            } else {
+                tone_file.style
+            };
+            (name, office, tone)
+        } else {
+            (
+                "Player".into(),
+                "City Council Member".into(),
+                "Realistic political drama. Grounded and human.".into(),
+            )
+        }
+    } else {
+        (
+            "Player".into(),
+            "City Council Member".into(),
+            "Realistic political drama. Grounded and human.".into(),
+        )
+    };
+
     GameContext {
         week: state.week,
         year: state.year,
         phase: format!("{:?}", state.phase),
-        player_name: "Player".into(),
-        player_office: "City Council Member".into(),
+        player_name,
+        player_office,
         ap_current: state.ap_current(),
         ap_max: state.ap_max(),
         active_npcs: vec![],
         recent_events: vec![],
         economic_summary: state.economy.summary(),
-        tone_instructions: "Realistic political drama. Grounded and human.".into(),
+        tone_instructions: tone,
     }
 }
 

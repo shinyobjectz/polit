@@ -35,9 +35,9 @@ pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;
     let has_save = paths
         .saves
-        .read_dir()
-        .map(|mut d| d.next().is_some())
-        .unwrap_or(false);
+        .join("current")
+        .join("character.yaml")
+        .exists();
 
     let mut terminal = init_terminal();
 
@@ -119,9 +119,9 @@ pub fn run_app_with_provider(
     let paths = GamePaths::init()?;
     let has_save = paths
         .saves
-        .read_dir()
-        .map(|mut d| d.next().is_some())
-        .unwrap_or(false);
+        .join("current")
+        .join("character.yaml")
+        .exists();
 
     let mut terminal = init_terminal();
 

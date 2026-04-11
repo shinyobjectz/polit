@@ -168,6 +168,69 @@ impl ConversationMemory {
         self.recent.len()
     }
 
+    /// Save to YAML files (file-based persistence).
+    pub fn save_to_dir(&self, dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+        std::fs::create_dir_all(dir)?;
+
+        let conv = crate::state::gamestate_fs::ConversationFile {
+            exchanges: self
+                .recent
+                .iter()
+                .map(|e| crate::state::gamestate_fs::MemoryExchange {
+                    turn: e.turn,
+                    player: e.user_input.clone(),
+                    narrator: e.assistant_response.clone(),
+                    tools: e.tool_calls_summary.clone(),
+                })
+                .collect(),
+        };
+        let yaml = serde_yaml::to_string(&conv)?;
+        std::fs::write(dir.join("conversation.yaml"), yaml)?;
+
+        if !self.summary.is_empty() {
+            std::fs::write(dir.join("summary.md"), &self.summary)?;
+        }
+
+        Ok(())
+    }
+
+    /// Load from YAML files.
+    pub fn load_from_dir(
+        dir: &std::path::Path,
+        max_recent: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let conv_path = dir.join("conversation.yaml");
+        let recent = if conv_path.exists() {
+            let content = std::fs::read_to_string(&conv_path)?;
+            let conv: crate::state::gamestate_fs::ConversationFile =
+                serde_yaml::from_str(&content)?;
+            conv.exchanges
+                .into_iter()
+                .map(|e| Exchange {
+                    turn: e.turn,
+                    user_input: e.player,
+                    assistant_response: e.narrator,
+                    tool_calls_summary: e.tools,
+                    timestamp_week: 1,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let summary_path = dir.join("summary.md");
+        let summary = std::fs::read_to_string(&summary_path).unwrap_or_default();
+
+        let turn_counter = recent.last().map(|e| e.turn).unwrap_or(0);
+
+        Ok(Self {
+            recent,
+            summary,
+            max_recent,
+            turn_counter,
+        })
+    }
+
     /// Clear all memory (new game)
     pub fn clear(&mut self) {
         self.recent.clear();
