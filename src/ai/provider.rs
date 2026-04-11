@@ -79,10 +79,10 @@ impl CandleProvider {
 
         let (gguf_repo, gguf_file) = match model_id {
             "google/gemma-4-E2B-it" | "gemma-4-e2b" => {
-                ("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q8_0.gguf")
+                ("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q4_K_M.gguf")
             }
             "google/gemma-4-E4B-it" | "gemma-4-e4b" => {
-                ("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q8_0.gguf")
+                ("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf")
             }
             other => {
                 return Err(
@@ -107,14 +107,15 @@ impl CandleProvider {
         max_tokens: usize,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let n_cpus = std::thread::available_parallelism()
-            .map(|n| n.get() as u32)
+            .map(|n| n.get() as i32)
             .unwrap_or(4);
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(4096))
             .with_n_threads(n_cpus)
             .with_n_threads_batch(n_cpus)
             .with_n_batch(2048)
-            .with_flash_attention_policy(llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_ENABLED);
+            // LLAMA_FLASH_ATTN_TYPE_ENABLED = 1 (from llama.h)
+            .with_flash_attention_policy(1);
 
         let mut ctx = with_stderr_suppressed(|| {
             self.model
