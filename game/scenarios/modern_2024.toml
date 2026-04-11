@@ -1,0 +1,31 @@
+[scenario]
+name = "Modern USA 2024"
+description = "Present-day America with real-ish 2024 economic indicators. Polarized politics, tech disruption, and great-power rivalry define the landscape. No scheduled events — the player drives the story."
+era = "modern"
+year = 2024
+
+[macro]
+gdp_growth = 0.025
+inflation = 0.031
+unemployment = 0.037
+fed_funds_rate = 0.0525
+consumer_confidence = 102.0
+debt_to_gdp = 1.23
+
+[counties]
+source = "fallback"
+states = []
+
+[geopolitical.overrides]
+
+[geopolitical.overrides.China]
+alignment = -0.4
+stability = 70
+
+[geopolitical.overrides.Russia]
+alignment = -0.7
+stability = 40
+
+[geopolitical.overrides.NATO]
+alignment = 0.8
+stability = 80

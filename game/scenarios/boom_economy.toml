@@ -1,0 +1,38 @@
+[scenario]
+name = "Boom Economy"
+description = "Late-1990s-style tech boom. Markets are soaring, unemployment is historically low, and consumer confidence is through the roof. But every bubble has a pin — how long can the good times last?"
+era = "historical"
+year = 1999
+
+[macro]
+gdp_growth = 0.045
+inflation = 0.018
+unemployment = 0.03
+fed_funds_rate = 0.055
+consumer_confidence = 140.0
+debt_to_gdp = 0.55
+
+[counties]
+source = "fallback"
+states = []
+
+[geopolitical.overrides]
+
+[geopolitical.overrides.Russia]
+alignment = 0.1
+stability = 45
+
+[geopolitical.overrides.China]
+alignment = 0.2
+stability = 70
+
+[geopolitical.overrides.NATO]
+alignment = 0.85
+stability = 85
+
+[[events.scheduled]]
+week = 25
+type = "SectorShock"
+sector = "Tech"
+description = "Dot-com wobble — a wave of tech IPOs collapse, shaking investor confidence"
+severity = 2.5

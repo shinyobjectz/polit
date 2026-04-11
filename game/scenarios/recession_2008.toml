@@ -1,0 +1,40 @@
+[scenario]
+name = "Great Recession 2008"
+description = "Q4 2008: the financial system is in freefall. Lehman has collapsed, credit markets are frozen, and unemployment is surging. Can you steer the country through the worst economic crisis since the Depression?"
+era = "historical"
+year = 2008
+
+[macro]
+gdp_growth = -0.028
+inflation = 0.001
+unemployment = 0.073
+fed_funds_rate = 0.01
+consumer_confidence = 55.0
+debt_to_gdp = 0.68
+
+[counties]
+source = "fallback"
+states = []
+
+[geopolitical.overrides]
+
+[geopolitical.overrides.China]
+alignment = -0.2
+stability = 75
+
+[geopolitical.overrides.Russia]
+alignment = -0.4
+stability = 55
+
+[[events.scheduled]]
+week = 5
+type = "EconomyShock"
+description = "Major bank insolvency triggers a cascading banking crisis"
+severity = 3.0
+
+[[events.scheduled]]
+week = 15
+type = "FiscalBill"
+bill_type = "spending"
+description = "Auto industry bailout debate reaches Congress"
+amount_gdp_pct = 0.005

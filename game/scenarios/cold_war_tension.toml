@@ -1,0 +1,47 @@
+[scenario]
+name = "Cold War Tension"
+description = "Heightened geopolitical stress across multiple fronts. Adversaries are aggressive, alliances are strained, and the world teeters on the edge of open conflict. Diplomacy or escalation — your call."
+era = "alternate"
+year = 2025
+
+[macro]
+gdp_growth = 0.015
+inflation = 0.035
+unemployment = 0.05
+fed_funds_rate = 0.04
+consumer_confidence = 80.0
+debt_to_gdp = 1.1
+
+[counties]
+source = "fallback"
+states = []
+
+[geopolitical.overrides]
+
+[geopolitical.overrides.Russia]
+alignment = -0.9
+stability = 35
+
+[geopolitical.overrides.China]
+alignment = -0.6
+stability = 60
+
+[geopolitical.overrides.Iran]
+alignment = -0.95
+stability = 30
+
+[geopolitical.overrides.NATO]
+alignment = 0.6
+stability = 65
+
+[[events.scheduled]]
+week = 10
+type = "Conflict"
+description = "Military confrontation with Iran escalates in the Strait of Hormuz"
+target = "Iran"
+
+[[events.scheduled]]
+week = 20
+type = "Sanction"
+description = "Congressional push for sweeping sanctions on Russia"
+target = "Russia"

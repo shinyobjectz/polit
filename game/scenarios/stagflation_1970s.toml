@@ -1,0 +1,44 @@
+[scenario]
+name = "1970s Stagflation"
+description = "The worst of both worlds: stagnant growth and runaway inflation. OPEC has weaponized oil, the dollar is unanchored, and traditional economic tools seem powerless. Navigate an era where every policy lever has a painful tradeoff."
+era = "historical"
+year = 1974
+
+[macro]
+gdp_growth = -0.005
+inflation = 0.09
+unemployment = 0.075
+fed_funds_rate = 0.10
+consumer_confidence = 60.0
+debt_to_gdp = 0.35
+
+[counties]
+source = "fallback"
+states = []
+
+[geopolitical.overrides]
+
+[geopolitical.overrides.Russia]
+alignment = -0.8
+stability = 70
+
+[geopolitical.overrides.China]
+alignment = -0.3
+stability = 55
+
+[geopolitical.overrides.NATO]
+alignment = 0.7
+stability = 75
+
+[[events.scheduled]]
+week = 1
+type = "SectorShock"
+sector = "Energy"
+description = "OPEC oil embargo sends energy prices skyrocketing"
+severity = 3.0
+
+[[events.scheduled]]
+week = 15
+type = "Tariff"
+description = "Emergency tariff on oil imports to reduce foreign energy dependence"
+target = "oil"
