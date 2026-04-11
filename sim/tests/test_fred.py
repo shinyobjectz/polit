@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from data_pipeline.fred import (
+from sim.data_pipeline.fred import (
     FALLBACK_MACRO,
     SERIES_MAP,
     fetch_fred_series,
@@ -49,7 +49,7 @@ def _mock_response(observations: list[dict], status_code: int = 200):
 # ---------------------------------------------------------------------------
 
 
-@patch("data_pipeline.fred.requests.get")
+@patch("sim.data_pipeline.fred.requests.get")
 def test_fetch_fred_series_returns_observations(mock_get):
     obs = _make_obs(["1.0", "2.0", "3.0"])
     mock_get.return_value = _mock_response(obs)
@@ -64,7 +64,7 @@ def test_fetch_fred_series_returns_observations(mock_get):
     assert call_params["observation_end"] == "2024-12-31"
 
 
-@patch("data_pipeline.fred.requests.get")
+@patch("sim.data_pipeline.fred.requests.get")
 def test_fetch_fred_series_raises_on_http_error(mock_get):
     mock = MagicMock()
     mock.raise_for_status.side_effect = Exception("404 Not Found")
@@ -86,7 +86,7 @@ def test_fetch_macro_requires_api_key(monkeypatch):
         fetch_macro_for_year(2024)
 
 
-@patch("data_pipeline.fred.fetch_fred_series")
+@patch("sim.data_pipeline.fred.fetch_fred_series")
 def test_fetch_macro_returns_all_required_fields(mock_fetch):
     """All macro fields should be present in the result."""
     # GDP needs >= 5 observations for YoY calc
@@ -111,7 +111,7 @@ def test_fetch_macro_returns_all_required_fields(mock_fetch):
     assert set(result.keys()) == REQUIRED_MACRO_FIELDS
 
 
-@patch("data_pipeline.fred.fetch_fred_series")
+@patch("sim.data_pipeline.fred.fetch_fred_series")
 def test_fetch_macro_uses_fallbacks_on_empty_data(mock_fetch):
     """When series return no observations, fallback values should be used."""
     mock_fetch.return_value = []
@@ -121,7 +121,7 @@ def test_fetch_macro_uses_fallbacks_on_empty_data(mock_fetch):
     assert result == FALLBACK_MACRO
 
 
-@patch("data_pipeline.fred.fetch_fred_series")
+@patch("sim.data_pipeline.fred.fetch_fred_series")
 def test_gdp_growth_calculation(mock_fetch):
     """GDP growth should be computed as YoY percentage change."""
     # 5 quarterly observations: prior year Q1-Q4 + current year Q1
@@ -140,7 +140,7 @@ def test_gdp_growth_calculation(mock_fetch):
     assert abs(result["gdp_growth"] - 0.02) < 1e-9
 
 
-@patch("data_pipeline.fred.fetch_fred_series")
+@patch("sim.data_pipeline.fred.fetch_fred_series")
 def test_unemployment_conversion(mock_fetch):
     """Unemployment should be divided by 100 (percentage to decimal)."""
     def side_effect(series_id, api_key, year):
@@ -155,7 +155,7 @@ def test_unemployment_conversion(mock_fetch):
     assert abs(result["unemployment"] - 0.037) < 1e-9
 
 
-@patch("data_pipeline.fred.fetch_fred_series")
+@patch("sim.data_pipeline.fred.fetch_fred_series")
 def test_inflation_calculation(mock_fetch):
     """Inflation should be YoY CPI change."""
     # 13 monthly observations
@@ -197,7 +197,7 @@ def test_fallback_macro_has_all_required_fields():
 # ---------------------------------------------------------------------------
 
 
-@patch("data_pipeline.fred.fetch_macro_for_year")
+@patch("sim.data_pipeline.fred.fetch_macro_for_year")
 def test_generate_scenario_toml_format(mock_fetch):
     """Generated TOML should be valid and contain expected sections."""
     mock_fetch.return_value = dict(FALLBACK_MACRO)
@@ -213,7 +213,7 @@ def test_generate_scenario_toml_format(mock_fetch):
     assert "gdp_growth" in toml_str
 
 
-@patch("data_pipeline.fred.fetch_macro_for_year")
+@patch("sim.data_pipeline.fred.fetch_macro_for_year")
 def test_generate_scenario_toml_historical_era(mock_fetch):
     """Years before 2020 should use 'historical' era."""
     mock_fetch.return_value = dict(FALLBACK_MACRO)
