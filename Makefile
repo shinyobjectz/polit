@@ -1,4 +1,4 @@
-.PHONY: build test install run demo headless clean lint fmt check venv venv-update sim-test
+.PHONY: build test install run demo headless clean lint fmt check venv venv-update sim-test sim-bench
 
 # === Development ===
 
@@ -99,6 +99,9 @@ venv-update:
 sim-test:
 	PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test --features simulation -- sim_bridge
 	/opt/homebrew/bin/python3.12 -m pytest sim/tests/ -v
+
+sim-bench:
+	@/opt/homebrew/bin/python3.12 -m pytest sim/tests/test_full_integration.py::test_tick_performance -v -s
 
 # === Debug ===
 
