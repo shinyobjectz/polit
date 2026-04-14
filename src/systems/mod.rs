@@ -1,6 +1,7 @@
 pub mod cards;
 pub mod dice;
 pub mod economy;
+pub mod election_inputs;
 #[cfg(feature = "simulation")]
 pub mod sim_bridge;
 pub mod sim_events;
