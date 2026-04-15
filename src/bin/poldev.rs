@@ -1,11 +1,24 @@
 use polit::devtools::in_process::InProcessRunner;
+use polit::devtools::pty::PtyRunner;
 use polit::devtools::scenario::Scenario;
+use polit::devtools::scenario::ScenarioMode;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match parse_args(std::env::args().skip(1))? {
         Command::Run { path } => {
             let scenario = Scenario::from_path(&path)?;
-            let result = InProcessRunner::new().run(&scenario)?;
+            let result = match scenario.mode {
+                ScenarioMode::Pty => {
+                    let binary = find_polit_binary()?;
+                    PtyRunner::new(binary).run(&scenario)?
+                }
+                ScenarioMode::InProcess | ScenarioMode::Both => {
+                    let result = InProcessRunner::new().run(&scenario)?;
+                    println!("loaded scenario '{}' in {}", scenario.name, scenario.mode);
+                    println!("{}", result.final_text.join("\n"));
+                    return Ok(());
+                }
+            };
             println!("loaded scenario '{}' in {}", scenario.name, scenario.mode);
             println!("{}", result.final_text.join("\n"));
             Ok(())
@@ -64,6 +77,25 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Command, UsageEr
 
 fn print_usage() {
     eprintln!("usage: poldev tui run <scenario.yaml>");
+}
+
+fn find_polit_binary() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    if let Ok(path) = std::env::var("POLDEV_POLIT_BIN") {
+        return Ok(path.into());
+    }
+
+    let current = std::env::current_exe()?;
+    let sibling = if cfg!(windows) {
+        current.with_file_name("polit.exe")
+    } else {
+        current.with_file_name("polit")
+    };
+
+    if sibling.exists() {
+        Ok(sibling)
+    } else {
+        Err("unable to locate polit binary; set POLDEV_POLIT_BIN".into())
+    }
 }
 
 #[cfg(test)]
