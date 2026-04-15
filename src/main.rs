@@ -1,6 +1,7 @@
 mod ai;
 mod devtools;
 mod engine;
+mod mcp;
 mod scripting;
 mod state;
 mod systems;
