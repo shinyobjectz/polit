@@ -1,8 +1,8 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::backend::Backend;
 use ratatui::prelude::*;
-use ratatui::Terminal;
 use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::Terminal;
 use std::collections::HashMap;
 
 use super::chat::{ChatStream, NpcAvatar};
@@ -225,8 +225,8 @@ impl CharacterCreationScreen {
 
                         // Initialize file-backed save state
                         if let Some(home) = std::env::var_os("HOME") {
-                            let save_path = std::path::PathBuf::from(home)
-                                .join(".polit/saves/current");
+                            let save_path =
+                                std::path::PathBuf::from(home).join(".polit/saves/current");
                             if let Ok(fs) = GameStateFs::open(&save_path) {
                                 // Write initial character data
                                 let mut char_file = fs.read_character();
@@ -234,7 +234,8 @@ impl CharacterCreationScreen {
                                 char_file.avatar_face = avatar_face.clone();
                                 char_file.avatar_color = format!("{:?}", avatar_color);
                                 let _ = fs.write_character(&char_file);
-                                let _ = fs.write_world(&crate::state::gamestate_fs::WorldFile::default());
+                                let _ = fs
+                                    .write_world(&crate::state::gamestate_fs::WorldFile::default());
                                 self.save_fs = Some(fs);
                                 tracing::info!("Save state initialized at {:?}", save_path);
                             }
@@ -360,11 +361,7 @@ impl CharacterCreationScreen {
 
         GameContext {
             tone_instructions: CREATION_TONE.to_string(),
-            player_name: self
-                .character
-                .get("name")
-                .unwrap_or("Player")
-                .to_string(),
+            player_name: self.character.get("name").unwrap_or("Player").to_string(),
             player_office: if char_summary.is_empty() {
                 "Unknown — being created".into()
             } else {
@@ -381,7 +378,11 @@ impl CharacterCreationScreen {
         for tool in tools {
             match tool {
                 ToolCall::LockField { field, value } => {
-                    let clean_field = field.trim_matches('"').trim().to_lowercase().replace(' ', "_");
+                    let clean_field = field
+                        .trim_matches('"')
+                        .trim()
+                        .to_lowercase()
+                        .replace(' ', "_");
                     let clean_value = value.trim_matches('"').trim().to_string();
 
                     // Name is already set from the form — don't let the model change it
@@ -401,9 +402,14 @@ impl CharacterCreationScreen {
                             if let Some(ref fs) = self.save_fs {
                                 let _ = fs.append_character_field(&clean_field, &clean_value);
                             }
-                            tracing::info!("Appending to field: '{}' += '{}'", clean_field, clean_value);
+                            tracing::info!(
+                                "Appending to field: '{}' += '{}'",
+                                clean_field,
+                                clean_value
+                            );
                             if seen_fields.insert(clean_field.clone()) {
-                                self.chat.add_system(&format!("✓ adding to {}", clean_field));
+                                self.chat
+                                    .add_system(&format!("✓ adding to {}", clean_field));
                             }
                         }
                     } else {
@@ -437,8 +443,7 @@ impl CharacterCreationScreen {
                         .map(|(i, o)| format!("  {}. {}", i + 1, o))
                         .collect::<Vec<_>>()
                         .join("\n");
-                    self.chat
-                        .add_system(&format!("{}\n{}", prompt, opts_text));
+                    self.chat.add_system(&format!("{}\n{}", prompt, opts_text));
                 }
                 ToolCall::AskQuestion { topic, question } => {
                     // The question is typically embedded in the narration,
@@ -580,7 +585,8 @@ impl CharacterCreationScreen {
                 0 => {
                     let w = 44u16;
                     let cx = area.x + (area.width.saturating_sub(w)) / 2;
-                    let ca = Rect::new(cx, layout[7].y, w, 8);
+                    let content_height = layout[7].height.max(1);
+                    let ca = Rect::new(cx, layout[7].y, w.min(area.width), 8.min(content_height));
                     let blk = Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(theme::BORDER))
@@ -655,7 +661,9 @@ impl CharacterCreationScreen {
                 1 => {
                     let w = 56u16;
                     let cx = area.x + (area.width.saturating_sub(w)) / 2;
-                    let ca = Rect::new(cx, layout[7].y, w, 14);
+                    let content_height = layout[7].height.max(1);
+                    let ca =
+                        Rect::new(cx, layout[7].y, w.min(area.width), 14.min(content_height));
                     let mut lines: Vec<Line> = vec![Line::from("")];
                     let hfg = if design_field == 0 {
                         theme::FG
@@ -783,9 +791,7 @@ impl CharacterCreationScreen {
                 }
 
                 // Shift+Enter goes backward
-                if key.code == KeyCode::Enter
-                    && key.modifiers.contains(KeyModifiers::SHIFT)
-                {
+                if key.code == KeyCode::Enter && key.modifiers.contains(KeyModifiers::SHIFT) {
                     match self.form_page {
                         0 => {
                             // Go back within name fields
@@ -896,7 +902,6 @@ impl CharacterCreationScreen {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Show thinking indicator
         let thinking = self.thinking;
-        let dots = ".".repeat((self.thinking_dots as usize % 3) + 1);
 
         // Pre-compute before borrowing chat mutably
         let depth = self.character.depth_percent();
@@ -906,35 +911,18 @@ impl CharacterCreationScreen {
         let summary = self.character.summary_lines();
 
         // Use component for proper wrap-aware height
-        let input_height = super::components::input_bar::height_for(&input_str, theme::MAX_CONTENT_WIDTH);
+        let input_height =
+            super::components::input_bar::height_for(&input_str, theme::MAX_CONTENT_WIDTH);
+
+        self.clear_generating_status();
 
         // Loading indicator — just dots + elapsed, no "thinking" label
         if thinking {
-            if self
-                .chat
-                .messages
-                .last()
-                .map(|m| m.text.contains("generating (") || m.text.starts_with("✦"))
-                .unwrap_or(false)
-            {
-                self.chat.messages.pop();
-            }
             let elapsed = self.thinking_start.elapsed().as_secs();
             let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             let spin_char = spinner[(self.frame_count as usize / 5) % spinner.len()];
             self.chat
                 .add_system(&format!("{} generating ({}s)", spin_char, elapsed));
-        } else {
-            // Remove loading indicator when done
-            if self
-                .chat
-                .messages
-                .last()
-                .map(|m| m.text.contains("generating (") || m.text.starts_with("✦"))
-                .unwrap_or(false)
-            {
-                self.chat.messages.pop();
-            }
         }
 
         let chat_height = terminal.size()?.height.saturating_sub(input_height + 4);
@@ -948,53 +936,80 @@ impl CharacterCreationScreen {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Min(3),               // Chat
-                    Constraint::Length(input_height),  // Input
-                    Constraint::Length(1),             // Gap
-                    Constraint::Length(2),             // Footer
+                    Constraint::Length(input_height), // Input
+                    Constraint::Length(1),            // Gap
+                    Constraint::Length(2),            // Footer
                 ])
                 .split(area);
 
             // Footer status bar (component)
             crate::ui::components::status_bar::render_creation(
-                frame, layout[3], depth, &depth_label, can_start,
+                frame,
+                layout[3],
+                depth,
+                &depth_label,
+                can_start,
             );
 
+            let has_sheet =
+                self.show_sheet && !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled);
+            let body_area = if has_sheet {
+                Rect::new(
+                    area.x + 1,
+                    layout[0].y,
+                    area.width.saturating_sub(2),
+                    layout[0].height,
+                )
+            } else {
+                theme::centered_content(layout[0])
+            };
 
-            // Chat — centered column (layout[0] now)
-            let chat_area = theme::centered_content(layout[0]);
+            let (chat_area, sheet_area) = if has_sheet && body_area.width >= 76 {
+                let panes = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Min(40),
+                        Constraint::Length(2),
+                        Constraint::Length(36),
+                    ])
+                    .split(body_area);
+                (panes[0], Some(panes[2]))
+            } else if has_sheet && body_area.height >= 10 {
+                let filled_count = summary.iter().filter(|(_, _, filled)| *filled).count() as u16;
+                let sheet_height = (filled_count + 3).min(body_area.height.saturating_sub(2));
+                let panes = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Min(3),
+                        Constraint::Length(1),
+                        Constraint::Length(sheet_height.max(3)),
+                    ])
+                    .split(body_area);
+                (panes[0], Some(panes[2]))
+            } else {
+                (body_area, None)
+            };
+
             frame.render_widget(chat_widget, chat_area);
 
             // Input — floating card bar with wrapping (layout[1])
             let input_content_area = theme::centered_content(layout[1]);
             crate::ui::components::input_bar::render(frame, input_content_area, &input_str);
 
-            // Character sheet — floating overlay on chat area (Tab to toggle)
-            let show_sheet = self.show_sheet;
-            if show_sheet && !summary.is_empty() && summary.iter().any(|(_, _, filled)| *filled) {
-                let filled_count = summary.iter().filter(|(_, _, f)| *f).count() as u16;
-                let block_height = (filled_count + 3).min(chat_area.height);
-                let block_width = 40u16.min(area.width.saturating_sub(4));
-
-                // Center the sheet overlay in the chat area
-                let block_x = area.x + (area.width.saturating_sub(block_width)) / 2;
-                let block_y = chat_area.y + 1;
-                let block_area = Rect::new(block_x, block_y, block_width, block_height);
-
+            if let Some(sheet_area) = sheet_area {
                 let summary_lines: Vec<Line> = summary
                     .iter()
                     .filter(|(_, _, filled)| *filled)
                     .map(|(key, value, _)| {
-                        let display_val = if value.len() > 26 {
-                            format!("{}…", &value[..25])
+                        let max_value_len = sheet_area.width.saturating_sub(14) as usize;
+                        let display_val = if value.len() > max_value_len && max_value_len > 1 {
+                            format!("{}…", &value[..max_value_len - 1])
                         } else {
                             value.clone()
                         };
                         Line::from(vec![
                             Span::styled("✓ ", Style::default().fg(theme::SUCCESS)),
-                            Span::styled(
-                                format!("{}: ", key),
-                                Style::default().fg(theme::FG_DIM),
-                            ),
+                            Span::styled(format!("{}: ", key), Style::default().fg(theme::FG_DIM)),
                             Span::styled(display_val, Style::default().fg(theme::FG)),
                         ])
                     })
@@ -1008,11 +1023,18 @@ impl CharacterCreationScreen {
                         .border_style(Style::default().fg(theme::ACCENT_BLUE))
                         .style(Style::default().bg(theme::BG)),
                 );
-                frame.render_widget(ratatui::widgets::Clear, block_area);
-                frame.render_widget(summary_block, block_area);
+                frame.render_widget(ratatui::widgets::Clear, sheet_area);
+                frame.render_widget(summary_block, sheet_area);
             }
         })?;
         Ok(())
+    }
+
+    fn clear_generating_status(&mut self) {
+        self.chat.messages.retain(|message| {
+            !(matches!(message.style, super::chat::MessageStyle::SystemEvent)
+                && message.text.contains("generating ("))
+        });
     }
 
     fn handle_chat_input(
@@ -1027,7 +1049,11 @@ impl CharacterCreationScreen {
             if let Event::Mouse(mouse) = evt {
                 match mouse.kind {
                     crossterm::event::MouseEventKind::ScrollUp => {
-                        tracing::debug!("Mouse scroll up, scroll_up={}, total={}", self.chat.scroll_up, self.chat.total_lines());
+                        tracing::debug!(
+                            "Mouse scroll up, scroll_up={}, total={}",
+                            self.chat.scroll_up,
+                            self.chat.total_lines()
+                        );
                         self.chat.scroll_up_by(3);
                     }
                     crossterm::event::MouseEventKind::ScrollDown => {
@@ -1120,11 +1146,7 @@ impl CharacterCreationScreen {
 
                             // Send to agent — it handles memory, context, and tool calls
                             let ctx = self.build_creation_context();
-                            async_ai.request_agent_turn(
-                                &input,
-                                ctx,
-                                DmMode::CharacterCreation,
-                            );
+                            async_ai.request_agent_turn(&input, ctx, DmMode::CharacterCreation);
                             self.thinking = true;
                             self.thinking_start = std::time::Instant::now();
                         }
@@ -1144,5 +1166,107 @@ impl CharacterCreationScreen {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::devtools::frame_dump::buffer_to_text_lines;
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    fn design_form_renders_on_100x30_terminal() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("test terminal should build");
+
+        let mut screen = CharacterCreationScreen::new();
+        screen.form_page = 1;
+        screen.first_name = "Alex".to_string();
+        screen.last_name = "Mercer".to_string();
+
+        screen
+            .draw_form(&mut terminal)
+            .expect("design form should render without panicking");
+    }
+
+    #[test]
+    fn draw_clears_stale_generating_status_after_ai_response() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("test terminal should build");
+
+        let mut screen = CharacterCreationScreen::new();
+        screen.thinking = false;
+        screen.show_sheet = true;
+        screen.character.set("name", "Alex Mercer");
+        screen.chat.add_system("⠙ generating (30s)");
+        screen.chat.add_npc(
+            "Narrator",
+            "The next question is already here, so the loading line should be gone.",
+            Some(NpcAvatar {
+                face: "✦✦".to_string(),
+                color: theme::ACCENT,
+                name: "Narrator".to_string(),
+            }),
+        );
+
+        screen
+            .draw(&mut terminal)
+            .expect("chat view should render without panicking");
+
+        assert!(
+            !screen
+                .chat
+                .messages
+                .iter()
+                .any(|message| message.text.contains("generating (")),
+            "ephemeral generating status should not stay in chat history after a response"
+        );
+    }
+
+    #[test]
+    fn chat_and_character_sheet_do_not_render_into_each_other() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("test terminal should build");
+
+        let mut screen = CharacterCreationScreen::new();
+        screen.show_sheet = true;
+        screen.character.set("name", "Alex Mercer");
+        screen.character
+            .set("background", "Punish someone who betrayed their hometown");
+        screen.character
+            .set("motivation", "Turn civic revenge into a polished campaign");
+        screen.chat.add_npc(
+            "Narrator",
+            "Alex Mercer is exactly the kind of candidate who can shake hands at a fish fry and still go on local TV looking annoyingly calm about it. There are at least three immediate flavors here: the true believer, the climber, and the wounded crusader who got screwed by politics once and now treats every campaign like a vendetta with better tailoring.",
+            Some(NpcAvatar {
+                face: "✦✦".to_string(),
+                color: theme::ACCENT,
+                name: "Narrator".to_string(),
+            }),
+        );
+
+        screen
+            .draw(&mut terminal)
+            .expect("chat view should render without panicking");
+
+        let lines = buffer_to_text_lines(terminal.backend().buffer());
+        let rendered = lines.join("\n");
+
+        assert!(
+            lines.iter().any(|line| line.contains("Character [Tab to close]")),
+            "character sheet should still render"
+        );
+        assert!(
+            rendered.contains("Alex Mercer is exactly the kind"),
+            "narrator copy should still render"
+        );
+        assert!(
+            !rendered.contains("kissin┌")
+                && !rendered.contains("tow│")
+                && !rendered.contains("ders, and Alex decid│")
+                && !rendered.contains("The └"),
+            "chat copy should not collide with character sheet borders: {lines:#?}"
+        );
     }
 }
