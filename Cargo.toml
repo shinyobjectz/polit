@@ -5,6 +5,10 @@ edition = "2021"
 description = "The American Politics Simulator"
 license = "MIT"
 
+[[bin]]
+name = "poldev"
+path = "src/bin/poldev.rs"
+
 [dependencies]
 # ECS Engine
 bevy_ecs = "0.15"
