@@ -1,0 +1,18 @@
+name: first_launch_ai_setup_codex
+mode: in_process
+fixtures:
+  fake_codex: true
+terminal:
+  width: 100
+  height: 30
+startup:
+  command: app
+steps:
+  - assert_text: "AI Setup"
+  - assert_text: "Codex Subscription"
+  - press: enter
+expect:
+  running: true
+  files:
+    - path: ".polit/config/ai.toml"
+      contains: 'provider = "codex"'

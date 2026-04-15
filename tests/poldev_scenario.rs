@@ -149,3 +149,38 @@ expect:
         ScenarioStep::Type { type_text } if type_text == "hello"
     ));
 }
+
+#[test]
+fn parses_fixtures_and_file_expectations() {
+    let yaml = r#"
+name: smoke
+mode: in_process
+fixtures:
+  fake_codex: true
+  seed_files:
+    - path: ".polit/config/ai.toml"
+      content: |
+        provider = "codex"
+terminal:
+  width: 120
+  height: 40
+startup:
+  command: title
+  has_save: true
+steps:
+  - assert_text: "POLIT"
+expect:
+  running: false
+  files:
+    - path: ".polit/config/ai.toml"
+      contains: 'provider = "codex"'
+"#;
+
+    let scenario = Scenario::from_yaml(yaml).unwrap();
+
+    assert!(scenario.fixtures.fake_codex);
+    assert_eq!(scenario.fixtures.seed_files.len(), 1);
+    assert_eq!(scenario.startup.command, "title");
+    assert!(scenario.startup.has_save);
+    assert_eq!(scenario.expect.files.len(), 1);
+}

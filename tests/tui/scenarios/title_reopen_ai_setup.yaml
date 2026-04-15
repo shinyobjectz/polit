@@ -1,0 +1,26 @@
+name: title_reopen_ai_setup
+mode: in_process
+fixtures:
+  fake_codex: true
+  seed_files:
+    - path: ".polit/config/ai.toml"
+      content: |
+        provider = "codex"
+terminal:
+  width: 100
+  height: 30
+startup:
+  command: title
+steps:
+  - assert_text: "P O L I T"
+  - press: down
+  - press: enter
+  - assert_text: "AI Setup"
+  - press: q
+  - assert_text: "P O L I T"
+  - press: q
+expect:
+  running: false
+  files:
+    - path: ".polit/config/ai.toml"
+      contains: 'provider = "codex"'

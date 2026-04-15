@@ -1,0 +1,19 @@
+name: first_launch_ai_setup_openrouter_missing_key
+mode: in_process
+terminal:
+  width: 100
+  height: 30
+startup:
+  command: app
+steps:
+  - assert_text: "AI Setup"
+  - press: right
+  - assert_text: "openrouter/deepseek-r1"
+  - press: tab
+  - press: tab
+  - press: tab
+  - press: enter
+  - assert_text: "openrouter api key is required"
+  - press: ctrl-c
+expect:
+  running: false

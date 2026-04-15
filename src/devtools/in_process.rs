@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -14,6 +15,9 @@ use tempfile::TempDir;
 use crate::devtools::frame_dump::buffer_to_text_lines;
 use crate::devtools::harness::ScriptedEventSource;
 use crate::devtools::scenario::{Scenario, ScenarioMode, ScenarioStep};
+use crate::ui::music::MusicController;
+use crate::ui::setup::{run_setup_flow, SetupOutcome};
+use crate::ui::title::{TitleAction, TitleScreen};
 use crate::ui::{run_startup_gate, StartupGateOutcome};
 
 #[derive(Debug, Default)]
@@ -40,6 +44,7 @@ impl InProcessRunner {
 
         let _home = TempHome::install()?;
         let ai_config_path = home_config_path(_home.path());
+        apply_fixtures(&scenario, &_home)?;
 
         let backend = RecordingBackend::new(scenario.terminal.width, scenario.terminal.height);
         let mut terminal = Terminal::new(backend)?;
@@ -48,6 +53,12 @@ impl InProcessRunner {
 
         let outcome = match scenario.startup.command.as_str() {
             "app" => run_startup_gate(&mut terminal, &mut events, &ai_config_path)?,
+            "title" => run_title_setup_flow(
+                &mut terminal,
+                &mut events,
+                &ai_config_path,
+                scenario.startup.has_save,
+            )?,
             other => {
                 return Err(format!("unsupported startup command '{other}'").into());
             }
@@ -55,6 +66,7 @@ impl InProcessRunner {
 
         let final_text = buffer_to_text_lines(terminal.backend().buffer());
         let snapshots = evaluate_steps(&scenario.steps, terminal.backend().frames())?;
+        validate_expected_files(_home.path(), &scenario.expect.files)?;
 
         let running = matches!(outcome, StartupGateOutcome::Continue);
         if running != scenario.expect.running {
@@ -70,6 +82,76 @@ impl InProcessRunner {
             snapshots,
         })
     }
+}
+
+fn run_title_setup_flow(
+    terminal: &mut Terminal<RecordingBackend>,
+    events: &mut ScriptedEventSource,
+    ai_config_path: &Path,
+    has_save: bool,
+) -> Result<StartupGateOutcome, Box<dyn Error>> {
+    let music = MusicController::start_anthem();
+
+    loop {
+        let mut title = TitleScreen::new(has_save);
+        let action = title.run(terminal, &music, events)?;
+
+        match action {
+            TitleAction::Settings => {
+                if run_setup_flow(terminal, events, ai_config_path.to_path_buf(), false, None)?
+                    == SetupOutcome::Cancelled
+                {
+                    continue;
+                }
+            }
+            TitleAction::Quit => {
+                music.stop();
+                return Ok(StartupGateOutcome::Cancelled);
+            }
+            TitleAction::NewCampaign | TitleAction::ContinueCampaign => {
+                music.stop();
+                return Ok(StartupGateOutcome::Continue);
+            }
+        }
+    }
+}
+
+fn apply_fixtures(scenario: &Scenario, home: &TempHome) -> Result<(), Box<dyn Error>> {
+    for seed_file in &scenario.fixtures.seed_files {
+        let path = home.path().join(&seed_file.path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, &seed_file.content)?;
+    }
+
+    if scenario.fixtures.fake_codex {
+        home.install_fake_codex()?;
+    }
+
+    Ok(())
+}
+
+fn validate_expected_files(
+    home: &Path,
+    file_expectations: &[crate::devtools::scenario::ScenarioFileExpectation],
+) -> Result<(), Box<dyn Error>> {
+    for expectation in file_expectations {
+        let path = home.join(&expectation.path);
+        let content = fs::read_to_string(&path).map_err(|error| {
+            format!("failed to read expected file {}: {}", path.display(), error)
+        })?;
+        if !content.contains(&expectation.contains) {
+            return Err(format!(
+                "expected file {} to contain {:?}",
+                path.display(),
+                expectation.contains
+            )
+            .into());
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -262,6 +344,7 @@ fn home_config_path(home: &std::path::Path) -> PathBuf {
 struct TempHome {
     dir: TempDir,
     previous_home: Option<std::ffi::OsString>,
+    previous_path: Option<std::ffi::OsString>,
     _env_lock: MutexGuard<'static, ()>,
 }
 
@@ -277,12 +360,48 @@ impl TempHome {
         Ok(Self {
             dir,
             previous_home,
+            previous_path: env::var_os("PATH"),
             _env_lock: env_lock,
         })
     }
 
     fn path(&self) -> &std::path::Path {
         self.dir.path()
+    }
+
+    fn install_fake_codex(&self) -> Result<(), Box<dyn Error>> {
+        let bin_dir = self.path().join(".poldev").join("bin");
+        fs::create_dir_all(&bin_dir)?;
+        let binary_path = fake_codex_binary_path(&bin_dir);
+        fs::write(&binary_path, fake_codex_script())?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&binary_path)?.permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&binary_path, permissions)?;
+        }
+
+        let existing_path = self
+            .previous_path
+            .as_ref()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let separator = if existing_path.is_empty() {
+            ""
+        } else if cfg!(windows) {
+            ";"
+        } else {
+            ":"
+        };
+        env::set_var(
+            "PATH",
+            format!("{}{}{}", bin_dir.display(), separator, existing_path),
+        );
+
+        Ok(())
     }
 }
 
@@ -298,5 +417,27 @@ impl Drop for TempHome {
         } else {
             env::remove_var("HOME");
         }
+
+        if let Some(previous_path) = &self.previous_path {
+            env::set_var("PATH", previous_path);
+        } else {
+            env::remove_var("PATH");
+        }
+    }
+}
+
+fn fake_codex_binary_path(bin_dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        bin_dir.join("codex.cmd")
+    } else {
+        bin_dir.join("codex")
+    }
+}
+
+fn fake_codex_script() -> &'static str {
+    if cfg!(windows) {
+        "@echo off\r\nif \"%1\"==\"login\" if \"%2\"==\"status\" (\r\n  echo Logged in using ChatGPT\r\n  exit /b 0\r\n)\r\necho unexpected codex args %* 1>&2\r\nexit /b 1\r\n"
+    } else {
+        "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then\n  echo \"Logged in using ChatGPT\"\n  exit 0\nfi\necho \"unexpected codex args: $*\" >&2\nexit 1\n"
     }
 }

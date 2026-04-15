@@ -10,6 +10,8 @@ use std::path::Path;
 pub struct Scenario {
     pub name: String,
     pub mode: ScenarioMode,
+    #[serde(default)]
+    pub fixtures: ScenarioFixtures,
     pub terminal: ScenarioTerminal,
     pub startup: ScenarioStartup,
     pub steps: Vec<ScenarioStep>,
@@ -56,12 +58,39 @@ pub struct ScenarioTerminal {
 #[serde(deny_unknown_fields)]
 pub struct ScenarioStartup {
     pub command: String,
+    #[serde(default)]
+    pub has_save: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScenarioExpect {
     pub running: bool,
+    #[serde(default)]
+    pub files: Vec<ScenarioFileExpectation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioFixtures {
+    #[serde(default)]
+    pub fake_codex: bool,
+    #[serde(default)]
+    pub seed_files: Vec<ScenarioSeedFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioSeedFile {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioFileExpectation {
+    pub path: String,
+    pub contains: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
