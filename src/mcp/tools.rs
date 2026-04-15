@@ -10,14 +10,14 @@ use super::pty_session::{PtySession, PtySessionConfig};
 use super::session::{ActiveSession, SessionManager};
 use super::RpcResponse;
 
-pub(crate) fn launch(manager: &mut SessionManager, id: Value, params: Value) -> RpcResponse {
+pub(crate) fn launch(manager: &mut SessionManager, id: Option<Value>, params: Value) -> RpcResponse {
     match launch_impl(manager, id.clone(), params) {
         Ok(response) => response,
         Err(error) => RpcResponse::internal_error(id, error.to_string()),
     }
 }
 
-pub(crate) fn send_keys(manager: &mut SessionManager, id: Value, params: Value) -> RpcResponse {
+pub(crate) fn send_keys(manager: &mut SessionManager, id: Option<Value>, params: Value) -> RpcResponse {
     let request: SendKeysRequest = match serde_json::from_value(params) {
         Ok(request) => request,
         Err(error) => return RpcResponse::invalid_request(id, error.to_string()),
@@ -44,7 +44,7 @@ pub(crate) fn send_keys(manager: &mut SessionManager, id: Value, params: Value) 
     })
 }
 
-pub(crate) fn read_screen(manager: &mut SessionManager, id: Value, params: Value) -> RpcResponse {
+pub(crate) fn read_screen(manager: &mut SessionManager, id: Option<Value>, params: Value) -> RpcResponse {
     let request: ReadScreenRequest = match serde_json::from_value(params) {
         Ok(request) => request,
         Err(error) => return RpcResponse::invalid_request(id, error.to_string()),
@@ -62,7 +62,7 @@ pub(crate) fn read_screen(manager: &mut SessionManager, id: Value, params: Value
 
 pub(crate) fn wait_for_text(
     manager: &mut SessionManager,
-    id: Value,
+    id: Option<Value>,
     params: Value,
 ) -> RpcResponse {
     let request: WaitForTextRequest = match serde_json::from_value(params) {
@@ -92,7 +92,7 @@ pub(crate) fn wait_for_text(
     })
 }
 
-pub(crate) fn terminate(manager: &mut SessionManager, id: Value) -> RpcResponse {
+pub(crate) fn terminate(manager: &mut SessionManager, id: Option<Value>) -> RpcResponse {
     let Some(mut session) = manager.active_session.take() else {
         return RpcResponse::invalid_request(id, "no active session".to_string());
     };
@@ -109,7 +109,7 @@ pub(crate) fn terminate(manager: &mut SessionManager, id: Value) -> RpcResponse 
     }
 }
 
-pub(crate) fn resize(manager: &mut SessionManager, id: Value, params: Value) -> RpcResponse {
+pub(crate) fn resize(manager: &mut SessionManager, id: Option<Value>, params: Value) -> RpcResponse {
     let request: ResizeRequest = match serde_json::from_value(params) {
         Ok(request) => request,
         Err(error) => return RpcResponse::invalid_request(id, error.to_string()),
@@ -132,7 +132,7 @@ pub(crate) fn resize(manager: &mut SessionManager, id: Value, params: Value) -> 
     })
 }
 
-pub(crate) fn screenshot(manager: &mut SessionManager, id: Value, params: Value) -> RpcResponse {
+pub(crate) fn screenshot(manager: &mut SessionManager, id: Option<Value>, params: Value) -> RpcResponse {
     let request: ScreenshotRequest = match serde_json::from_value(params) {
         Ok(request) => request,
         Err(error) => return RpcResponse::invalid_request(id, error.to_string()),
@@ -162,7 +162,7 @@ pub(crate) fn screenshot(manager: &mut SessionManager, id: Value, params: Value)
 
 pub(crate) fn read_save_metadata(
     manager: &mut SessionManager,
-    id: Value,
+    id: Option<Value>,
     params: Value,
 ) -> RpcResponse {
     let request: SaveMetadataRequest = match serde_json::from_value(params) {
@@ -184,7 +184,7 @@ pub(crate) fn read_save_metadata(
 
 pub(crate) fn read_recent_logs(
     manager: &mut SessionManager,
-    id: Value,
+    id: Option<Value>,
     params: Value,
 ) -> RpcResponse {
     let request: RecentLogsRequest = match serde_json::from_value(params) {
@@ -207,7 +207,7 @@ pub(crate) fn read_recent_logs(
 
 pub(crate) fn read_file_excerpt(
     manager: &mut SessionManager,
-    id: Value,
+    id: Option<Value>,
     params: Value,
 ) -> RpcResponse {
     let request: FileExcerptRequest = match serde_json::from_value(params) {
@@ -230,7 +230,7 @@ pub(crate) fn read_file_excerpt(
 
 pub(crate) fn not_implemented(
     manager: &SessionManager,
-    id: Value,
+    id: Option<Value>,
     method: &str,
 ) -> RpcResponse {
     RpcResponse::success(
@@ -245,7 +245,7 @@ pub(crate) fn not_implemented(
 
 fn launch_impl(
     manager: &mut SessionManager,
-    id: Value,
+    id: Option<Value>,
     params: Value,
 ) -> Result<RpcResponse, Box<dyn std::error::Error>> {
     let request: LaunchRequest = serde_json::from_value(params)?;
