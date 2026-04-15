@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
+use crate::devtools::diagnostics::{collect_input_history, format_failure};
 use crate::devtools::scenario::{
     Scenario, ScenarioFileExpectation, ScenarioMode, ScenarioSeedFile, ScenarioStep,
 };
@@ -93,7 +94,8 @@ impl PtyRunner {
 
         settle_screen(&rx, &mut parser, STARTUP_TIMEOUT);
 
-        for step in &scenario.steps {
+        for (step_offset, step) in scenario.steps.iter().enumerate() {
+            let step_index = step_offset + 1;
             match step {
                 ScenarioStep::Press { press } => {
                     writer.write_all(&press_bytes(press)?)?;
@@ -108,14 +110,33 @@ impl PtyRunner {
                     }
                 }
                 ScenarioStep::AssertText { assert_text } => {
-                    wait_for_text(&rx, &mut parser, assert_text, STEP_TIMEOUT)?;
+                    wait_for_text(&rx, &mut parser, assert_text, STEP_TIMEOUT).map_err(
+                        |error| -> Box<dyn std::error::Error> {
+                            format_failure(
+                                scenario,
+                                ScenarioMode::Pty,
+                                Some(step_index),
+                                &error.to_string(),
+                                &screen_lines(&parser),
+                                &collect_input_history(&scenario.steps, step_index),
+                                env.home_path(),
+                            )
+                            .into()
+                        },
+                    )?;
                 }
                 ScenarioStep::AssertNotText { assert_not_text } => {
                     settle_screen(&rx, &mut parser, STEP_TIMEOUT);
                     let lines = screen_lines(&parser);
                     if lines.iter().any(|line| line.contains(assert_not_text)) {
-                        return Err(format!(
-                            "unexpected text '{assert_not_text}' found in PTY screen"
+                        return Err(format_failure(
+                            scenario,
+                            ScenarioMode::Pty,
+                            Some(step_index),
+                            &format!("unexpected text '{assert_not_text}' found in PTY screen"),
+                            &lines,
+                            &collect_input_history(&scenario.steps, step_index),
+                            env.home_path(),
                         )
                         .into());
                     }
@@ -131,10 +152,35 @@ impl PtyRunner {
             child.as_mut(),
             scenario.expect.running,
             allows_non_success_exit(&scenario.steps),
-        )?;
+        )
+        .map_err(|error| -> Box<dyn std::error::Error> {
+            format_failure(
+                scenario,
+                ScenarioMode::Pty,
+                None,
+                &error.to_string(),
+                &screen_lines(&parser),
+                &collect_input_history(&scenario.steps, scenario.steps.len()),
+                env.home_path(),
+            )
+            .into()
+        })?;
         settle_screen(&rx, &mut parser, QUIET_WINDOW);
 
-        validate_expected_files(env.home_path(), &scenario.expect.files)?;
+        validate_expected_files(env.home_path(), &scenario.expect.files).map_err(
+            |error| -> Box<dyn std::error::Error> {
+                format_failure(
+                    scenario,
+                    ScenarioMode::Pty,
+                    None,
+                    &error.to_string(),
+                    &screen_lines(&parser),
+                    &collect_input_history(&scenario.steps, scenario.steps.len()),
+                    env.home_path(),
+                )
+                .into()
+            },
+        )?;
 
         Ok(PtyRunResult {
             final_text: screen_lines(&parser),

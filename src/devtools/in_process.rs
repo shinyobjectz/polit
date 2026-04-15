@@ -12,6 +12,7 @@ use ratatui::layout::{Position, Size};
 use ratatui::Terminal;
 use tempfile::TempDir;
 
+use crate::devtools::diagnostics::{collect_input_history, format_failure};
 use crate::devtools::frame_dump::buffer_to_text_lines;
 use crate::devtools::harness::ScriptedEventSource;
 use crate::devtools::scenario::{Scenario, ScenarioMode, ScenarioStep};
@@ -65,14 +66,48 @@ impl InProcessRunner {
         };
 
         let final_text = buffer_to_text_lines(terminal.backend().buffer());
-        let snapshots = evaluate_steps(&scenario.steps, terminal.backend().frames())?;
-        validate_expected_files(_home.path(), &scenario.expect.files)?;
+        let snapshots = evaluate_steps(&scenario.steps, terminal.backend().frames()).map_err(
+            |failure| -> Box<dyn Error> {
+                format_failure(
+                    scenario,
+                    ScenarioMode::InProcess,
+                    Some(failure.step_index),
+                    &failure.message,
+                    &failure.frame,
+                    &collect_input_history(&scenario.steps, failure.step_index),
+                    _home.path(),
+                )
+                .into()
+            },
+        )?;
+        validate_expected_files(_home.path(), &scenario.expect.files).map_err(
+            |error| -> Box<dyn Error> {
+                format_failure(
+                    scenario,
+                    ScenarioMode::InProcess,
+                    None,
+                    &error.to_string(),
+                    &final_text,
+                    &collect_input_history(&scenario.steps, scenario.steps.len()),
+                    _home.path(),
+                )
+                .into()
+            },
+        )?;
 
         let running = matches!(outcome, StartupGateOutcome::Continue);
         if running != scenario.expect.running {
-            return Err(format!(
-                "scenario expected running={} but runner produced running={}",
-                scenario.expect.running, running
+            return Err(format_failure(
+                scenario,
+                ScenarioMode::InProcess,
+                None,
+                &format!(
+                    "scenario expected running={} but runner produced running={}",
+                    scenario.expect.running, running
+                ),
+                &final_text,
+                &collect_input_history(&scenario.steps, scenario.steps.len()),
+                _home.path(),
             )
             .into());
         }
@@ -277,18 +312,30 @@ fn parse_press(press: &str) -> Result<Event, Box<dyn Error>> {
     Ok(event)
 }
 
+#[derive(Debug)]
+struct StepEvaluationFailure {
+    step_index: usize,
+    message: String,
+    frame: Vec<String>,
+}
+
 fn evaluate_steps(
     steps: &[ScenarioStep],
     frames: &[Vec<String>],
-) -> Result<HashMap<String, Vec<String>>, Box<dyn Error>> {
+) -> Result<HashMap<String, Vec<String>>, StepEvaluationFailure> {
     if frames.is_empty() {
-        return Err("scenario produced no frames".into());
+        return Err(StepEvaluationFailure {
+            step_index: 1,
+            message: "scenario produced no frames".to_string(),
+            frame: Vec::new(),
+        });
     }
 
     let mut snapshots = HashMap::new();
     let mut frame_index = 0usize;
 
-    for step in steps {
+    for (step_offset, step) in steps.iter().enumerate() {
+        let step_index = step_offset + 1;
         match step {
             ScenarioStep::Press { .. } => {
                 frame_index += 1;
@@ -297,28 +344,31 @@ fn evaluate_steps(
                 frame_index += typed_event_count(type_text);
             }
             ScenarioStep::AssertText { assert_text } => {
-                let frame = current_frame(frames, frame_index)?;
+                let frame = current_frame(frames, frame_index);
                 if !frame.iter().any(|line| line.contains(assert_text)) {
-                    return Err(format!(
-                        "expected text '{assert_text}' not found in frame {frame_index}"
-                    )
-                    .into());
+                    return Err(StepEvaluationFailure {
+                        step_index,
+                        message: format!(
+                            "expected text '{assert_text}' not found in frame {frame_index}"
+                        ),
+                        frame: frame.to_vec(),
+                    });
                 }
             }
             ScenarioStep::AssertNotText { assert_not_text } => {
-                let frame = current_frame(frames, frame_index)?;
+                let frame = current_frame(frames, frame_index);
                 if frame.iter().any(|line| line.contains(assert_not_text)) {
-                    return Err(format!(
-                        "unexpected text '{assert_not_text}' found in frame {frame_index}"
-                    )
-                    .into());
+                    return Err(StepEvaluationFailure {
+                        step_index,
+                        message: format!(
+                            "unexpected text '{assert_not_text}' found in frame {frame_index}"
+                        ),
+                        frame: frame.to_vec(),
+                    });
                 }
             }
             ScenarioStep::Snapshot { snapshot } => {
-                snapshots.insert(
-                    snapshot.clone(),
-                    current_frame(frames, frame_index)?.to_vec(),
-                );
+                snapshots.insert(snapshot.clone(), current_frame(frames, frame_index).to_vec());
             }
         }
     }
@@ -326,11 +376,12 @@ fn evaluate_steps(
     Ok(snapshots)
 }
 
-fn current_frame(frames: &[Vec<String>], frame_index: usize) -> Result<&[String], Box<dyn Error>> {
+fn current_frame(frames: &[Vec<String>], frame_index: usize) -> &[String] {
     frames
         .get(frame_index)
+        .or_else(|| frames.last())
         .map(Vec::as_slice)
-        .ok_or_else(|| format!("frame {frame_index} was not captured").into())
+        .unwrap_or(&[])
 }
 
 fn typed_event_count(type_text: &str) -> usize {

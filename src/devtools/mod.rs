@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod frame_dump;
 pub mod harness;
 pub mod in_process;

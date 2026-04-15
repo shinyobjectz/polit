@@ -4,6 +4,15 @@ use polit::devtools::scenario::Scenario;
 use polit::devtools::scenario::ScenarioMode;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Err(error) = run() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     match parse_args(std::env::args().skip(1))? {
         Command::Run {
             path,
