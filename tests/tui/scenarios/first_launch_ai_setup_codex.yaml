@@ -1,5 +1,5 @@
 name: first_launch_ai_setup_codex
-mode: in_process
+mode: both
 fixtures:
   fake_codex: true
 terminal:
