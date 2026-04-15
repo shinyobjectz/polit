@@ -1,10 +1,13 @@
+use polit::devtools::in_process::InProcessRunner;
 use polit::devtools::scenario::Scenario;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match parse_args(std::env::args().skip(1))? {
         Command::Run { path } => {
             let scenario = Scenario::from_path(&path)?;
+            let result = InProcessRunner::new().run(&scenario)?;
             println!("loaded scenario '{}' in {}", scenario.name, scenario.mode);
+            println!("{}", result.final_text.join("\n"));
             Ok(())
         }
         Command::Help => {

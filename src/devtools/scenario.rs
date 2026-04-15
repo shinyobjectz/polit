@@ -67,6 +67,10 @@ pub struct ScenarioExpect {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScenarioStep {
     AssertText { assert_text: String },
+    AssertNotText { assert_not_text: String },
+    Press { press: String },
+    Type { type_text: String },
+    Snapshot { snapshot: String },
 }
 
 impl<'de> Deserialize<'de> for ScenarioStep {
@@ -78,6 +82,31 @@ impl<'de> Deserialize<'de> for ScenarioStep {
         #[serde(deny_unknown_fields)]
         struct AssertTextStep {
             assert_text: String,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct AssertNotTextStep {
+            assert_not_text: String,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct PressStep {
+            press: String,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct TypeStep {
+            #[serde(rename = "type")]
+            type_text: String,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct SnapshotStep {
+            snapshot: String,
         }
 
         let value = serde_yaml::Value::deserialize(deserializer)?;
@@ -97,9 +126,33 @@ impl<'de> Deserialize<'de> for ScenarioStep {
 
         match step_name {
             "assert_text" => {
-                let step: AssertTextStep = serde_yaml::from_value(value).map_err(D::Error::custom)?;
+                let step: AssertTextStep =
+                    serde_yaml::from_value(value).map_err(D::Error::custom)?;
                 Ok(Self::AssertText {
                     assert_text: step.assert_text,
+                })
+            }
+            "assert_not_text" => {
+                let step: AssertNotTextStep =
+                    serde_yaml::from_value(value).map_err(D::Error::custom)?;
+                Ok(Self::AssertNotText {
+                    assert_not_text: step.assert_not_text,
+                })
+            }
+            "press" => {
+                let step: PressStep = serde_yaml::from_value(value).map_err(D::Error::custom)?;
+                Ok(Self::Press { press: step.press })
+            }
+            "type" => {
+                let step: TypeStep = serde_yaml::from_value(value).map_err(D::Error::custom)?;
+                Ok(Self::Type {
+                    type_text: step.type_text,
+                })
+            }
+            "snapshot" => {
+                let step: SnapshotStep = serde_yaml::from_value(value).map_err(D::Error::custom)?;
+                Ok(Self::Snapshot {
+                    snapshot: step.snapshot,
                 })
             }
             other => Err(D::Error::custom(format!("unknown scenario step '{other}'"))),

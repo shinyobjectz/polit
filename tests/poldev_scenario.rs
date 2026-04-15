@@ -1,4 +1,4 @@
-use polit::devtools::scenario::Scenario;
+use polit::devtools::scenario::{Scenario, ScenarioStep};
 
 #[test]
 fn parses_minimal_tui_scenario() {
@@ -60,7 +60,7 @@ terminal:
 startup:
   command: app
 steps:
-  - press: enter
+  - mash: enter
 expect:
   running: true
 "#;
@@ -68,7 +68,7 @@ expect:
     let error = Scenario::from_yaml(yaml).unwrap_err();
     let message = error.to_string();
 
-    assert!(message.contains("press"), "unexpected error: {message}");
+    assert!(message.contains("mash"), "unexpected error: {message}");
 }
 
 #[test]
@@ -116,4 +116,36 @@ typo_field: true
         message.contains("typo_field"),
         "unexpected error: {message}"
     );
+}
+
+#[test]
+fn parses_runner_steps() {
+    let yaml = r#"
+name: smoke
+mode: in_process
+terminal:
+  width: 120
+  height: 40
+startup:
+  command: app
+steps:
+  - press: ctrl-c
+  - type: "hello"
+  - assert_not_text: "Error"
+  - snapshot: "final"
+expect:
+  running: true
+"#;
+
+    let scenario = Scenario::from_yaml(yaml).unwrap();
+
+    assert_eq!(scenario.steps.len(), 4);
+    assert!(matches!(
+        &scenario.steps[0],
+        ScenarioStep::Press { press } if press == "ctrl-c"
+    ));
+    assert!(matches!(
+        &scenario.steps[1],
+        ScenarioStep::Type { type_text } if type_text == "hello"
+    ));
 }
