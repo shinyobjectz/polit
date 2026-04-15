@@ -1,11 +1,16 @@
+pub mod config;
+pub mod codex;
 pub mod agent;
 pub mod async_chat;
+pub mod factory;
 pub mod context;
 pub mod debug_log;
 pub mod memory;
 pub mod mock;
+pub mod openrouter;
 pub mod native_format;
 pub mod provider;
+pub mod secrets;
 pub mod tools;
 pub mod vfs;
 

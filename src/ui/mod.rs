@@ -7,13 +7,16 @@ pub mod music;
 pub mod scenario;
 pub mod theme;
 pub mod title;
+pub mod setup;
 
 use crate::engine::channels::Channels;
 use crate::engine::paths::GamePaths;
 use crate::engine::GameState;
 use crate::engine::{demo, game_thread};
+use crate::ai::factory::ConfiguredAiProviderFactory;
 
 use music::MusicController;
+use setup::{run_setup_flow, should_open_setup, SetupOutcome};
 use title::{TitleAction, TitleScreen};
 
 /// Initialize terminal with mouse support
@@ -33,157 +36,229 @@ fn restore_terminal() {
 /// Launch the full game with title screen
 pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let paths = GamePaths::init()?;
-    let has_save = paths
-        .saves
-        .join("current")
-        .join("character.yaml")
-        .exists();
+    let ai_config_path = paths.config.join("ai.toml");
+    let factory = ConfiguredAiProviderFactory::new(ai_config_path.clone());
+
+    let mut terminal = init_terminal();
+
+    if should_open_setup(&ai_config_path) {
+        if run_setup_flow(&mut terminal, ai_config_path.clone(), true, None)?
+            == SetupOutcome::Cancelled
+        {
+            restore_terminal();
+            return Ok(());
+        }
+    }
+
+    // Music lives for the entire pre-game flow
+    let music = MusicController::start_anthem();
+
+    loop {
+        let has_save = paths
+            .saves
+            .join("current")
+            .join("character.yaml")
+            .exists();
+
+        // Show title screen
+        let mut title = TitleScreen::new(has_save);
+        let action = title.run(&mut terminal, &music)?;
+
+        match action {
+            TitleAction::Quit => {
+                music.stop();
+                restore_terminal();
+                return Ok(());
+            }
+            TitleAction::Settings => {
+                let _ = run_setup_flow(&mut terminal, ai_config_path.clone(), false, None)?;
+                continue;
+            }
+            TitleAction::NewCampaign => {
+                // Scenario select (anthem continues)
+                let mut scenario_screen = scenario::ScenarioScreen::new();
+                let config = scenario_screen.run(&mut terminal, &music)?;
+                if config.is_none() {
+                    music.stop();
+                    restore_terminal();
+                    return Ok(());
+                }
+                let _scenario_config = config.unwrap();
+
+                // Cinematic intro (switches to intro score)
+                let intro_toml = include_str!("../../game/scenarios/modern_usa/intro.toml");
+                if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
+                    let _ = intro_screen.run(&mut terminal, &music);
+                }
+
+                // Switch to character creation score
+                music.switch_to_char_creation();
+
+                // Character creation (configured AI)
+                let mut char_screen = character_creation::CharacterCreationScreen::new();
+                let character_provider = match factory.build_provider_for_character_creation() {
+                    Ok(provider) => provider,
+                    Err(error) => {
+                        music.switch_to_anthem();
+                        let _ = run_setup_flow(
+                            &mut terminal,
+                            ai_config_path.clone(),
+                            false,
+                            Some(error.to_string()),
+                        )?;
+                        continue;
+                    }
+                };
+                let _character = char_screen.run(&mut terminal, character_provider, &music)?;
+
+                let runtime_provider = match factory.build_provider_for_runtime() {
+                    Ok(provider) => provider,
+                    Err(error) => {
+                        music.switch_to_anthem();
+                        let _ = run_setup_flow(
+                            &mut terminal,
+                            ai_config_path.clone(),
+                            false,
+                            Some(error.to_string()),
+                        )?;
+                        continue;
+                    }
+                };
+
+                // Stop music before entering the game
+                music.stop();
+
+                let state = GameState::with_provider(runtime_provider)?;
+                let channels = Channels::new();
+                let (ui_channels, game_channels) = channels.split();
+                let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+                let mut app_inst = app::App::new(ui_channels);
+                let result = app_inst.run(&mut terminal);
+                restore_terminal();
+                let _ = game_handle.join();
+                return result;
+            }
+            TitleAction::ContinueCampaign => {
+                let runtime_provider = match factory.build_provider_for_runtime() {
+                    Ok(provider) => provider,
+                    Err(error) => {
+                        let _ = run_setup_flow(
+                            &mut terminal,
+                            ai_config_path.clone(),
+                            false,
+                            Some(error.to_string()),
+                        )?;
+                        continue;
+                    }
+                };
+
+                // Stop music before entering the game
+                music.stop();
+
+                let state = GameState::with_provider(runtime_provider)?;
+                let channels = Channels::new();
+                let (ui_channels, game_channels) = channels.split();
+                let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+                let mut app_inst = app::App::new(ui_channels);
+                let result = app_inst.run(&mut terminal);
+                restore_terminal();
+                let _ = game_handle.join();
+                return result;
+            }
+        }
+    }
+}
+
+/// Launch the full game with mock AI (for local testing without configured providers).
+pub fn run_mock_app() -> Result<(), Box<dyn std::error::Error>> {
+    let paths = GamePaths::init()?;
+    let ai_config_path = paths.config.join("ai.toml");
 
     let mut terminal = init_terminal();
 
     // Music lives for the entire pre-game flow
     let music = MusicController::start_anthem();
 
-    // Show title screen
-    let mut title = TitleScreen::new(has_save);
-    let action = title.run(&mut terminal, &music)?;
+    loop {
+        let has_save = paths
+            .saves
+            .join("current")
+            .join("character.yaml")
+            .exists();
 
-    match action {
-        TitleAction::Quit | TitleAction::Settings => {
-            music.stop();
-            restore_terminal();
-            return Ok(());
-        }
-        TitleAction::NewCampaign => {
-            // Scenario select (anthem continues)
-            let mut scenario_screen = scenario::ScenarioScreen::new();
-            let config = scenario_screen.run(&mut terminal, &music)?;
-            if config.is_none() {
+        // Show title screen
+        let mut title = TitleScreen::new(has_save);
+        let action = title.run(&mut terminal, &music)?;
+
+        match action {
+            TitleAction::Quit => {
                 music.stop();
                 restore_terminal();
                 return Ok(());
             }
-            let _scenario_config = config.unwrap();
-
-            // Cinematic intro (switches to intro score)
-            let intro_toml = include_str!("../../game/scenarios/modern_usa/intro.toml");
-            if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
-                let _ = intro_screen.run(&mut terminal, &music);
+            TitleAction::Settings => {
+                let _ = run_setup_flow(&mut terminal, ai_config_path.clone(), false, None)?;
+                continue;
             }
+            TitleAction::NewCampaign => {
+                // Scenario select (anthem continues)
+                let mut scenario_screen = scenario::ScenarioScreen::new();
+                let config = scenario_screen.run(&mut terminal, &music)?;
+                if config.is_none() {
+                    music.stop();
+                    restore_terminal();
+                    return Ok(());
+                }
+                let _scenario_config = config.unwrap();
 
-            // Switch to character creation score
-            music.switch_to_char_creation();
+                // Cinematic intro (switches to intro score)
+                let intro_toml = include_str!("../../game/scenarios/modern_usa/intro.toml");
+                if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
+                    let _ = intro_screen.run(&mut terminal, &music);
+                }
 
-            // Character creation (mock AI)
-            let mock_provider: Box<dyn crate::ai::AiProvider> =
-                Box::new(crate::ai::mock::MockProvider::new());
-            let mut char_screen = character_creation::CharacterCreationScreen::new();
-            let _character = char_screen.run(&mut terminal, mock_provider, &music)?;
+                // Switch to character creation score
+                music.switch_to_char_creation();
 
-            // Stop music before entering the game
-            music.stop();
+                // Character creation (mock AI)
+                let mock_provider: Box<dyn crate::ai::AiProvider> =
+                    Box::new(crate::ai::mock::MockProvider::new());
+                let mut char_screen = character_creation::CharacterCreationScreen::new();
+                let _character = char_screen.run(&mut terminal, mock_provider, &music)?;
 
-            let state = GameState::new()?;
-            let channels = Channels::new();
-            let (ui_channels, game_channels) = channels.split();
-            let game_handle = game_thread::spawn_game_thread(state, game_channels);
-
-            let mut app_inst = app::App::new(ui_channels);
-            let result = app_inst.run(&mut terminal);
-            restore_terminal();
-            let _ = game_handle.join();
-            return result;
-        }
-        TitleAction::ContinueCampaign => {
-            // Stop music before entering the game
-            music.stop();
-
-            let state = GameState::new()?;
-            let channels = Channels::new();
-            let (ui_channels, game_channels) = channels.split();
-            let game_handle = game_thread::spawn_game_thread(state, game_channels);
-
-            let mut app_inst = app::App::new(ui_channels);
-            let result = app_inst.run(&mut terminal);
-            restore_terminal();
-            let _ = game_handle.join();
-            return result;
-        }
-    }
-}
-
-/// Launch with a specific AI provider (e.g., real Gemma 4 model)
-pub fn run_app_with_provider(
-    mut provider: Box<dyn crate::ai::AiProvider>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let paths = GamePaths::init()?;
-    let has_save = paths
-        .saves
-        .join("current")
-        .join("character.yaml")
-        .exists();
-
-    let mut terminal = init_terminal();
-
-    let music = MusicController::start_anthem();
-
-    let mut title = TitleScreen::new(has_save);
-    let action = title.run(&mut terminal, &music)?;
-
-    match action {
-        TitleAction::Quit | TitleAction::Settings => {
-            music.stop();
-            restore_terminal();
-            return Ok(());
-        }
-        TitleAction::NewCampaign => {
-            let mut scenario_screen = scenario::ScenarioScreen::new();
-            let config = scenario_screen.run(&mut terminal, &music)?;
-            if config.is_none() {
+                // Stop music before entering the game
                 music.stop();
+
+                let state = GameState::new()?;
+                let channels = Channels::new();
+                let (ui_channels, game_channels) = channels.split();
+                let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+                let mut app_inst = app::App::new(ui_channels);
+                let result = app_inst.run(&mut terminal);
                 restore_terminal();
-                return Ok(());
+                let _ = game_handle.join();
+                return result;
             }
-            let _scenario_config = config.unwrap();
+            TitleAction::ContinueCampaign => {
+                // Stop music before entering the game
+                music.stop();
 
-            // Cinematic intro (switches to intro score)
-            let intro_toml = include_str!("../../game/scenarios/modern_usa/intro.toml");
-            if let Ok(mut intro_screen) = intro::IntroScreen::from_toml(intro_toml) {
-                let _ = intro_screen.run(&mut terminal, &music);
+                let state = GameState::new()?;
+                let channels = Channels::new();
+                let (ui_channels, game_channels) = channels.split();
+                let game_handle = game_thread::spawn_game_thread(state, game_channels);
+
+                let mut app_inst = app::App::new(ui_channels);
+                let result = app_inst.run(&mut terminal);
+                restore_terminal();
+                let _ = game_handle.join();
+                return result;
             }
-
-            // Switch to character creation score
-            music.switch_to_char_creation();
-
-            // Character creation (AI-guided)
-            let mut char_screen = character_creation::CharacterCreationScreen::new();
-            let _character = char_screen.run(&mut terminal, provider, &music)?;
         }
-        TitleAction::ContinueCampaign => {}
     }
-
-    // Stop music before entering the game
-    music.stop();
-
-    // Reload provider for game (model is cached, loads in ~5s)
-    eprintln!("Loading model for game...");
-    let hf_token = std::env::var("HF_TOKEN").ok();
-    let game_provider =
-        crate::ai::provider::CandleProvider::load("google/gemma-4-E4B-it", hf_token.as_deref())
-            .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
-    eprintln!("Ready.");
-    let provider: Box<dyn crate::ai::AiProvider> = Box::new(game_provider);
-
-    let state = GameState::with_provider(provider)?;
-    let channels = Channels::new();
-    let (ui_channels, game_channels) = channels.split();
-    let game_handle = game_thread::spawn_game_thread(state, game_channels);
-
-    let mut app_inst = app::App::new(ui_channels);
-    let result = app_inst.run(&mut terminal);
-    restore_terminal();
-    let _ = game_handle.join();
-    result
 }
 
 /// Launch directly into demo mode (skips title screen)

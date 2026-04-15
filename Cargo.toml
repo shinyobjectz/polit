@@ -48,6 +48,8 @@ tunes = "1.1"
 # Utilities
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
+keyring = "4.0.0-rc.3"
+keyring-core = "0.7.2"
 
 # AI Inference
 llama-cpp-2 = "0.1.143"
@@ -69,7 +71,7 @@ criterion = "0.5"
 tempfile = "3"
 
 [features]
-default = ["metal"]
+default = ["metal", "reqwest"]
 simulation = ["pyo3"]
 data-pipeline = ["reqwest"]
 cuda = []

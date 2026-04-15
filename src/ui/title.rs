@@ -29,7 +29,7 @@ impl TitleScreen {
         if has_save {
             items.push(("  Continue Campaign", TitleAction::ContinueCampaign));
         }
-        items.push(("  Settings", TitleAction::Settings));
+        items.push(("  AI Setup", TitleAction::Settings));
         items.push(("  Quit", TitleAction::Quit));
 
         Self {

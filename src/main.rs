@@ -21,50 +21,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Explicit mock mode (for testing without model)
         init_file_logger();
         ai::debug_log::DebugLog::init();
-        ui::run_app()?;
+        ui::run_mock_app()?;
     } else {
-        // Default: always use real model
+        // Default: always use configured AI provider
         init_file_logger();
         ai::debug_log::DebugLog::init();
-        let model_id = get_model_id(&args);
-        let hf_token = std::env::var("HF_TOKEN").ok();
-
-        eprintln!("Loading Gemma 4 model...");
-
-        // Suppress llama.cpp Metal shader compilation noise on stderr
-        let provider = {
-            use std::os::unix::io::AsRawFd;
-            let devnull = std::fs::File::open("/dev/null").ok();
-            let saved_stderr = unsafe { libc::dup(2) };
-            if let Some(ref null) = devnull {
-                unsafe {
-                    libc::dup2(null.as_raw_fd(), 2);
-                }
-            }
-            let result = ai::provider::CandleProvider::load(model_id, hf_token.as_deref());
-            // Restore stderr
-            if saved_stderr >= 0 {
-                unsafe {
-                    libc::dup2(saved_stderr, 2);
-                    libc::close(saved_stderr);
-                }
-            }
-            result
-        }
-        .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
-
-        eprintln!("Ready.");
-
-        ui::run_app_with_provider(Box::new(provider))?;
+        ui::run_app()?;
     }
 
     Ok(())
 }
 
 fn run_query(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let model_id = get_model_id(args);
-    let hf_token = std::env::var("HF_TOKEN").ok();
-
     let prompt = args
         .iter()
         .position(|a| a == "--query")
@@ -72,8 +40,12 @@ fn run_query(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.as_str())
         .unwrap_or("Hello");
 
-    tracing::info!("Loading model: {}", model_id);
-    let mut provider = ai::provider::CandleProvider::load(model_id, hf_token.as_deref())
+    let paths = GamePaths::init()?;
+    let config_path = paths.config.join("ai.toml");
+    ensure_ai_setup_for_query(&config_path)?;
+    let factory = ai::factory::ConfiguredAiProviderFactory::new(config_path);
+    let mut provider = factory
+        .build_provider_for_runtime()
         .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
 
     tracing::info!("Generating...");
@@ -95,12 +67,26 @@ fn run_query(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_model_id<'a>(args: &'a [String]) -> &'a str {
-    args.iter()
-        .position(|a| a == "--model")
-        .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("google/gemma-4-E4B-it")
+fn ensure_ai_setup_for_query(
+    config_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !ui::setup::should_open_setup(config_path) {
+        return Ok(());
+    }
+
+    let mut terminal = ratatui::init();
+    let result = ui::setup::run_setup_flow(
+        &mut terminal,
+        config_path.to_path_buf(),
+        true,
+        Some("AI setup is required before using --query.".to_string()),
+    );
+    ratatui::restore();
+
+    match result? {
+        ui::setup::SetupOutcome::Configured => Ok(()),
+        ui::setup::SetupOutcome::Cancelled => Err("AI setup was cancelled".into()),
+    }
 }
 
 fn init_file_logger() {

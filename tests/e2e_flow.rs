@@ -5,8 +5,11 @@ use polit::ai::mock::MockProvider;
 use polit::ai::agent::Agent;
 use polit::ai::context::GameContext;
 use polit::ai::{AiProvider, DmMode};
+use polit::ai::config::{AiConfig, AiProviderKind};
+use polit::ai::factory::{ConfiguredAiProviderBuilder, ConfiguredAiProviderFactory};
 use polit::state::GameStateFs;
 use tempfile::TempDir;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn test_character_creation_flow() {
@@ -32,6 +35,103 @@ fn test_character_creation_flow() {
     assert_eq!(char.fields.get("name").unwrap(), "Homer Simpson");
     assert_eq!(char.fields.get("party").unwrap(), "Democrat");
     assert_eq!(char.fields.get("tone").unwrap(), "absurdist comedy");
+}
+
+#[derive(Debug)]
+struct TaggedProvider {
+    name: &'static str,
+}
+
+impl TaggedProvider {
+    fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+}
+
+impl AiProvider for TaggedProvider {
+    fn generate(
+        &mut self,
+        _prompt: &str,
+        _mode: DmMode,
+    ) -> Result<polit::ai::tools::DmResponse, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(polit::ai::tools::DmResponse {
+            narration: String::new(),
+            tool_calls: vec![],
+        })
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+}
+
+#[derive(Debug, Default)]
+struct FakeConfiguredBuilder {
+    codex_builds: AtomicUsize,
+    openrouter_builds: AtomicUsize,
+}
+
+impl ConfiguredAiProviderBuilder for FakeConfiguredBuilder {
+    fn build_codex_provider(
+        &self,
+        _config: &AiConfig,
+    ) -> Result<Box<dyn AiProvider>, Box<dyn std::error::Error + Send + Sync>> {
+        self.codex_builds.fetch_add(1, Ordering::SeqCst);
+        Ok(Box::new(TaggedProvider::new("codex")))
+    }
+
+    fn build_openrouter_provider(
+        &self,
+        _config: &AiConfig,
+        _storage: &dyn polit::ai::secrets::SecureStorage,
+    ) -> Result<Box<dyn AiProvider>, Box<dyn std::error::Error + Send + Sync>> {
+        self.openrouter_builds.fetch_add(1, Ordering::SeqCst);
+        Ok(Box::new(TaggedProvider::new("openrouter")))
+    }
+}
+
+#[test]
+fn valid_ai_config_uses_configured_provider_in_runtime_startup() {
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("ai.toml");
+    let config = AiConfig {
+        provider: AiProviderKind::OpenRouter,
+        model: Some("openrouter/deepseek-r1".to_string()),
+        openrouter_api_key: None,
+    };
+    config.save(&config_path).unwrap();
+
+    let storage = Box::new(polit::ai::secrets::InMemorySecureStorage::new());
+    let builder = Box::new(FakeConfiguredBuilder::default());
+    let factory = ConfiguredAiProviderFactory::with_parts(config_path, storage, builder);
+
+    let provider = factory.build_provider_for_runtime().unwrap();
+
+    assert_eq!(provider.name(), "openrouter");
+    assert_ne!(provider.name(), "mock-dm");
+}
+
+#[test]
+fn character_creation_and_game_use_the_same_configured_provider_kind() {
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("ai.toml");
+    let config = AiConfig {
+        provider: AiProviderKind::Codex,
+        model: None,
+        openrouter_api_key: None,
+    };
+    config.save(&config_path).unwrap();
+
+    let storage = Box::new(polit::ai::secrets::InMemorySecureStorage::new());
+    let builder = Box::new(FakeConfiguredBuilder::default());
+    let factory = ConfiguredAiProviderFactory::with_parts(config_path, storage, builder);
+
+    let character_provider = factory.build_provider_for_character_creation().unwrap();
+    let runtime_provider = factory.build_provider_for_runtime().unwrap();
+
+    assert_eq!(character_provider.name(), "codex");
+    assert_eq!(runtime_provider.name(), "codex");
+    assert_eq!(character_provider.name(), runtime_provider.name());
 }
 
 #[test]
