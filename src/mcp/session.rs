@@ -1,16 +1,20 @@
-use serde_json::json;
+use std::path::PathBuf;
 
+use serde_json::Value;
+
+use super::pty_session::PtySession;
+use super::tools;
 use super::{RpcRequest, RpcResponse};
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct SessionManager {
-    active_session: Option<ActiveSession>,
+    pub(crate) active_session: Option<ActiveSession>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ActiveSession {
-    terminal_width: u16,
-    terminal_height: u16,
+pub(crate) struct ActiveSession {
+    pub(crate) runtime: PtySession,
+    pub(crate) binary_path: PathBuf,
+    pub(crate) home_path: PathBuf,
 }
 
 impl SessionManager {
@@ -23,58 +27,31 @@ impl SessionManager {
         }
 
         match request.method.as_str() {
-            "launch" => self.recognized_placeholder(request, false),
-            "send_keys" => self.recognized_placeholder(request, true),
-            "read_screen" => self.recognized_placeholder(request, true),
-            "wait_for_text" => self.recognized_placeholder(request, true),
-            "resize" => self.recognized_placeholder(request, true),
-            "screenshot" => self.recognized_placeholder(request, true),
-            "read_save_metadata" => self.recognized_placeholder(request, true),
-            "read_recent_logs" => self.recognized_placeholder(request, true),
-            "read_file_excerpt" => self.recognized_placeholder(request, true),
-            "terminate" => self.recognized_placeholder(request, true),
+            "launch" => tools::launch(self, request.id, request.params),
+            "send_keys" => tools::send_keys(self, request.id, request.params),
+            "read_screen" => tools::read_screen(self, request.id, request.params),
+            "wait_for_text" => tools::wait_for_text(self, request.id, request.params),
+            "resize" => tools::resize(self, request.id, request.params),
+            "screenshot" => tools::screenshot(self, request.id, request.params),
+            "read_save_metadata" => tools::read_save_metadata(self, request.id, request.params),
+            "read_recent_logs" => tools::read_recent_logs(self, request.id, request.params),
+            "read_file_excerpt" => tools::read_file_excerpt(self, request.id, request.params),
+            "terminate" => tools::terminate(self, request.id),
             other => RpcResponse::method_not_found(request.id, other),
         }
     }
 
-    fn recognized_placeholder(
-        &mut self,
-        request: RpcRequest,
-        session_required: bool,
-    ) -> RpcResponse {
-        if request.method == "launch" {
-            self.active_session = Some(ActiveSession::from_launch_params(&request.params));
-        }
+    pub(crate) fn with_session<F>(&mut self, id: Value, f: F) -> RpcResponse
+    where
+        F: FnOnce(&mut ActiveSession) -> Result<RpcResponse, Box<dyn std::error::Error>>,
+    {
+        let Some(session) = self.active_session.as_mut() else {
+            return RpcResponse::invalid_request(id, "no active session".to_string());
+        };
 
-        RpcResponse::success(
-            request.id,
-            json!({
-                "status": "not_implemented",
-                "method": request.method,
-                "sessionActive": self.active_session.is_some(),
-                "sessionRequired": session_required,
-            }),
-        )
-    }
-}
-
-impl ActiveSession {
-    fn from_launch_params(params: &serde_json::Value) -> Self {
-        let terminal = params.get("terminal");
-        let terminal_width = terminal
-            .and_then(|value| value.get("width"))
-            .and_then(|value| value.as_u64())
-            .and_then(|value| u16::try_from(value).ok())
-            .unwrap_or(100);
-        let terminal_height = terminal
-            .and_then(|value| value.get("height"))
-            .and_then(|value| value.as_u64())
-            .and_then(|value| u16::try_from(value).ok())
-            .unwrap_or(30);
-
-        Self {
-            terminal_width,
-            terminal_height,
+        match f(session) {
+            Ok(response) => response,
+            Err(error) => RpcResponse::internal_error(id, error.to_string()),
         }
     }
 }

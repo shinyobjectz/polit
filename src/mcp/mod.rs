@@ -1,4 +1,7 @@
+pub mod inspect;
+pub mod pty_session;
 pub mod session;
+pub mod tools;
 
 use std::error::Error;
 use std::io::{BufRead, Write};

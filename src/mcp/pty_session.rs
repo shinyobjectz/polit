@@ -14,6 +14,7 @@ pub struct PtySessionConfig {
     pub terminal_width: u16,
     pub terminal_height: u16,
     pub path_env: Option<String>,
+    pub args: Vec<String>,
 }
 
 impl PtySessionConfig {
@@ -23,11 +24,17 @@ impl PtySessionConfig {
             terminal_width,
             terminal_height,
             path_env: None,
+            args: Vec::new(),
         }
     }
 
     pub fn with_path_env(mut self, path_env: impl Into<String>) -> Self {
         self.path_env = Some(path_env.into());
+        self
+    }
+
+    pub fn with_args(mut self, args: impl IntoIterator<Item = String>) -> Self {
+        self.args = args.into_iter().collect();
         self
     }
 }
@@ -60,6 +67,7 @@ impl PtySession {
         if let Some(path_env) = &config.path_env {
             command.env("PATH", path_env);
         }
+        command.args(&config.args);
 
         let child = pair.slave.spawn_command(command)?;
         let reader = pair.master.try_clone_reader()?;
@@ -206,8 +214,28 @@ impl PtySession {
         Ok((size.cols, size.rows))
     }
 
+    pub fn resize(
+        &mut self,
+        terminal_width: u16,
+        terminal_height: u16,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.master.resize(PtySize {
+            rows: terminal_height,
+            cols: terminal_width,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+        self.parser.set_size(terminal_height, terminal_width);
+        self.refresh_revision();
+        Ok(())
+    }
+
     fn process_chunk(&mut self, chunk: &[u8]) {
         self.parser.process(chunk);
+        self.refresh_revision();
+    }
+
+    fn refresh_revision(&mut self) {
         let screen = self.parser.screen().contents().to_string();
         if screen != self.last_screen_text {
             self.screen_revision += 1;

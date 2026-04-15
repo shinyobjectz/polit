@@ -5,16 +5,16 @@ pub mod components;
 pub mod intro;
 pub mod music;
 pub mod scenario;
+pub mod setup;
 pub mod theme;
 pub mod title;
-pub mod setup;
 
+use crate::ai::factory::ConfiguredAiProviderFactory;
+use crate::devtools::harness::{CrosstermEventSource, EventSource};
 use crate::engine::channels::Channels;
 use crate::engine::paths::GamePaths;
 use crate::engine::GameState;
 use crate::engine::{demo, game_thread};
-use crate::ai::factory::ConfiguredAiProviderFactory;
-use crate::devtools::harness::{CrosstermEventSource, EventSource};
 use ratatui::backend::Backend;
 use ratatui::Terminal;
 
@@ -82,7 +82,9 @@ fn run_app_with_event_source(
     let ai_config_path = paths.config.join("ai.toml");
     let factory = ConfiguredAiProviderFactory::new(ai_config_path.clone());
 
-    if run_startup_gate(terminal, events, &ai_config_path)? == StartupGateOutcome::Cancelled {
+    if !use_mock_provider
+        && run_startup_gate(terminal, events, &ai_config_path)? == StartupGateOutcome::Cancelled
+    {
         return Ok(());
     }
 
@@ -90,11 +92,7 @@ fn run_app_with_event_source(
     let music = MusicController::start_anthem();
 
     loop {
-        let has_save = paths
-            .saves
-            .join("current")
-            .join("character.yaml")
-            .exists();
+        let has_save = paths.saves.join("current").join("character.yaml").exists();
 
         // Show title screen
         let mut title = TitleScreen::new(has_save);
@@ -106,13 +104,7 @@ fn run_app_with_event_source(
                 return Ok(());
             }
             TitleAction::Settings => {
-                let _ = run_setup_flow(
-                    terminal,
-                    events,
-                    ai_config_path.clone(),
-                    false,
-                    None,
-                )?;
+                let _ = run_setup_flow(terminal, events, ai_config_path.clone(), false, None)?;
                 continue;
             }
             TitleAction::NewCampaign => {

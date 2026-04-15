@@ -439,6 +439,22 @@ cargo run --bin poldev -- tui run --mode pty tests/tui/scenarios/first_launch_ai
 
 More detail: [docs/poldev.md](docs/poldev.md)
 
+### Live Playtesting MCP
+
+`polit_mcp` exposes a single live `polit` session over stdio so an agent can playtest the real binary turn by turn.
+
+```bash
+cargo build --bin polit --bin polit_mcp
+target/debug/polit_mcp
+```
+
+- launches the real compiled `polit` binary inside a PTY
+- sends keyboard input with `send_keys`
+- reads bounded visible terminal text with `read_screen` and `wait_for_text`
+- supports bounded save/config/log inspection under `~/.polit/`
+
+More detail: [docs/polit-mcp.md](docs/polit-mcp.md)
+
 ### Environment Variables
 
 | Variable | Purpose |

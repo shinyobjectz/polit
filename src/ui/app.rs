@@ -1,8 +1,8 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::Backend;
 use ratatui::prelude::*;
-use ratatui::Terminal;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::Terminal;
 
 use super::chat::ChatStream;
 use super::components;
@@ -140,15 +140,16 @@ impl App {
             frame.render_widget(Block::default().style(Style::default().bg(theme::BG)), area);
 
             // Calculate input height accounting for word wrapping
-            let input_height = super::components::input_bar::height_for(&input_str, theme::MAX_CONTENT_WIDTH);
+            let input_height =
+                super::components::input_bar::height_for(&input_str, theme::MAX_CONTENT_WIDTH);
 
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Min(3),               // Chat
-                    Constraint::Length(input_height),  // Input
-                    Constraint::Length(1),             // Gap
-                    Constraint::Length(2),             // Footer status bar
+                    Constraint::Length(input_height), // Input
+                    Constraint::Length(1),            // Gap
+                    Constraint::Length(2),            // Footer status bar
                 ])
                 .split(area);
 
@@ -221,9 +222,18 @@ impl App {
                 };
 
                 if !char_fields.is_empty() {
-                    let keys = ["name", "background", "archetype", "starting_office",
-                                "party", "traits", "motivation", "tone"];
-                    let lines: Vec<Line> = keys.iter()
+                    let keys = [
+                        "name",
+                        "background",
+                        "archetype",
+                        "starting_office",
+                        "party",
+                        "traits",
+                        "motivation",
+                        "tone",
+                    ];
+                    let lines: Vec<Line> = keys
+                        .iter()
                         .filter_map(|k| {
                             char_fields.get(*k).map(|v| {
                                 let display = if v.len() > 60 {
@@ -232,7 +242,10 @@ impl App {
                                     v.clone()
                                 };
                                 Line::from(vec![
-                                    Span::styled(format!("{}: ", k), Style::default().fg(theme::FG_DIM)),
+                                    Span::styled(
+                                        format!("{}: ", k),
+                                        Style::default().fg(theme::FG_DIM),
+                                    ),
                                     Span::styled(display, Style::default().fg(theme::FG)),
                                 ])
                             })
@@ -268,12 +281,7 @@ impl App {
                     view_label,
                     Style::default().fg(theme::ACCENT_BLUE),
                 ));
-                let pill_area = Rect::new(
-                    area.width.saturating_sub(16),
-                    layout[3].y,
-                    15,
-                    1,
-                );
+                let pill_area = Rect::new(area.width.saturating_sub(16), layout[3].y, 15, 1);
                 frame.render_widget(pill, pill_area);
             }
 
@@ -335,7 +343,22 @@ impl App {
                                 self.slash_selected += 1;
                             }
                         }
-                        KeyCode::Enter | KeyCode::Tab => {
+                        KeyCode::Enter => {
+                            let trimmed = self.input.trim();
+                            if trimmed.len() > 1 {
+                                let input = self.input.clone();
+                                self.input.clear();
+                                self.showing_slash_menu = false;
+                                self.process_input(&input);
+                            } else {
+                                let cmds = self.filtered_commands();
+                                if let Some((cmd, _)) = cmds.get(self.slash_selected) {
+                                    self.input = format!("/{} ", cmd);
+                                }
+                                self.showing_slash_menu = false;
+                            }
+                        }
+                        KeyCode::Tab => {
                             let cmds = self.filtered_commands();
                             if let Some((cmd, _)) = cmds.get(self.slash_selected) {
                                 self.input = format!("/{} ", cmd);

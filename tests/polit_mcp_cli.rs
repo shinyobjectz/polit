@@ -47,6 +47,6 @@ fn launch_request_is_recognized_by_polit_mcp_stdio_server() {
         serde_json::from_str(response_line.trim()).expect("response should be valid json");
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 1);
-    assert_eq!(response["result"]["status"], "not_implemented");
-    assert_eq!(response["result"]["method"], "launch");
+    assert_eq!(response["result"]["status"], "ok");
+    assert_eq!(response["result"]["sessionActive"], true);
 }
