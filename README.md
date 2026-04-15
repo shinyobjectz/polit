@@ -423,6 +423,22 @@ make sim-bench     # simulation tick benchmark
 make run           # launch without installing
 ```
 
+### TUI Validation
+
+`poldev` drives POLIT's `ratatui` runtime through checked-in YAML scenarios.
+
+```bash
+cargo run --bin poldev -- tui run tests/tui/scenarios/first_launch_ai_setup_codex.yaml
+cargo run --bin poldev -- tui run --mode pty tests/tui/scenarios/first_launch_ai_setup_codex.yaml
+```
+
+- `in_process` runs the current runtime in-process with deterministic frame capture.
+- `pty` launches the real compiled `polit` binary inside a pseudo-terminal.
+- Scenarios live under `tests/tui/scenarios/`.
+- Failure output includes the scenario name, backend mode, failing step, temp home path, recent input, and the last frame dump.
+
+More detail: [docs/poldev.md](docs/poldev.md)
+
 ### Environment Variables
 
 | Variable | Purpose |
