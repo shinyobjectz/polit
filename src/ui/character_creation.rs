@@ -1,5 +1,7 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::backend::Backend;
 use ratatui::prelude::*;
+use ratatui::Terminal;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::collections::HashMap;
 
@@ -11,6 +13,7 @@ use crate::ai::async_chat::{AiResponse, AsyncAiChat};
 use crate::ai::context::GameContext;
 use crate::ai::tools::ToolCall;
 use crate::ai::{AiProvider, DmMode};
+use crate::devtools::harness::EventSource;
 use crate::state::GameStateFs;
 
 /// Character data — thin wrapper around GameStateFs.
@@ -196,9 +199,10 @@ impl CharacterCreationScreen {
 
     pub fn run(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
         provider: Box<dyn AiProvider>,
         music: &MusicController,
+        events: &mut impl EventSource,
     ) -> Result<Option<CharacterData>, Box<dyn std::error::Error>> {
         // Spawn async AI thread with an Agent in CharacterCreation mode.
         // The agent owns conversation memory so history accumulates automatically.
@@ -209,7 +213,7 @@ impl CharacterCreationScreen {
             match self.phase {
                 CreationPhase::BasicForm => {
                     self.draw_form(terminal)?;
-                    if self.handle_form_input()? {
+                    if self.handle_form_input(events)? {
                         let full_name =
                             format!("{} {}", self.first_name.trim(), self.last_name.trim());
                         let avatar_face = build_avatar(self.head_selected, self.eyes_selected);
@@ -338,7 +342,7 @@ impl CharacterCreationScreen {
 
                     self.frame_count += 1;
                     self.draw(terminal)?;
-                    self.handle_chat_input(&mut async_ai, music)?;
+                    self.handle_chat_input(&mut async_ai, music, events)?;
                 }
             }
         }
@@ -473,7 +477,7 @@ impl CharacterCreationScreen {
 
     fn draw_form(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.frame_count += 1;
         let page = self.form_page;
@@ -768,18 +772,19 @@ impl CharacterCreationScreen {
         Ok(())
     }
 
-    fn handle_form_input(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
-        if crossterm::event::poll(std::time::Duration::from_millis(33))? {
-            if let Event::Key(key) = crossterm::event::read()? {
+    fn handle_form_input(
+        &mut self,
+        events: &mut impl EventSource,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if events.poll(std::time::Duration::from_millis(33))? {
+            if let Event::Key(key) = events.read()? {
                 if key.kind != KeyEventKind::Press {
                     return Ok(false);
                 }
 
                 // Shift+Enter goes backward
                 if key.code == KeyCode::Enter
-                    && key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::SHIFT)
+                    && key.modifiers.contains(KeyModifiers::SHIFT)
                 {
                     match self.form_page {
                         0 => {
@@ -887,7 +892,7 @@ impl CharacterCreationScreen {
 
     fn draw(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Show thinking indicator
         let thinking = self.thinking;
@@ -1014,9 +1019,10 @@ impl CharacterCreationScreen {
         &mut self,
         async_ai: &mut AsyncAiChat,
         music: &MusicController,
+        events: &mut impl EventSource,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if event::poll(std::time::Duration::from_millis(16))? {
-            let evt = event::read()?;
+        if events.poll(std::time::Duration::from_millis(16))? {
+            let evt = events.read()?;
 
             if let Event::Mouse(mouse) = evt {
                 match mouse.kind {
@@ -1040,7 +1046,7 @@ impl CharacterCreationScreen {
 
                 // Allow scroll and Ctrl+C even while thinking
                 match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.creation_complete = true;
                         return Ok(());
                     }
@@ -1068,7 +1074,7 @@ impl CharacterCreationScreen {
                     KeyCode::Right if self.input.is_empty() && self.character.can_start() => {
                         self.creation_complete = true;
                     }
-                    KeyCode::Enter if key.modifiers.contains(event::KeyModifiers::SHIFT) => {
+                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                         self.input.push('\n');
                     }
                     KeyCode::Enter => {

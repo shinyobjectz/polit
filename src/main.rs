@@ -1,4 +1,5 @@
 mod ai;
+mod devtools;
 mod engine;
 mod scripting;
 mod state;
@@ -75,8 +76,10 @@ fn ensure_ai_setup_for_query(
     }
 
     let mut terminal = ratatui::init();
+    let mut events = crate::devtools::harness::CrosstermEventSource;
     let result = ui::setup::run_setup_flow(
         &mut terminal,
+        &mut events,
         config_path.to_path_buf(),
         true,
         Some("AI setup is required before using --query.".to_string()),

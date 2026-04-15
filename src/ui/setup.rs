@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::backend::Backend;
 use ratatui::prelude::*;
+use ratatui::Terminal;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::ai::config::{AiConfig, AiProviderKind, AiSetupState};
@@ -11,6 +13,7 @@ use crate::ai::secrets::{
     load_openrouter_api_key, save_openrouter_api_key, InMemorySecureStorage,
     KeyringSecureStorage, SecureStorage, SecureStorageError,
 };
+use crate::devtools::harness::EventSource;
 
 use super::theme;
 
@@ -244,23 +247,24 @@ impl<V: SetupValidator, S: SecureStorage> SetupScreen<V, S> {
 
     pub fn run(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
+        events: &mut impl EventSource,
     ) -> Result<SetupOutcome, Box<dyn std::error::Error>> {
         loop {
             terminal.draw(|frame| self.render(frame))?;
 
-            if !event::poll(std::time::Duration::from_millis(50))? {
+            if !events.poll(std::time::Duration::from_millis(50))? {
                 continue;
             }
 
-            if let Event::Key(key) = event::read()? {
+            if let Event::Key(key) = events.read()? {
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
 
                 match key.code {
                     KeyCode::Char('c')
-                        if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
                     {
                         return Ok(SetupOutcome::Cancelled);
                     }
@@ -563,13 +567,14 @@ impl<V: SetupValidator, S: SecureStorage> SetupScreen<V, S> {
 }
 
 pub fn run_setup_flow(
-    terminal: &mut ratatui::DefaultTerminal,
+    terminal: &mut Terminal<impl Backend>,
+    events: &mut impl EventSource,
     config_path: impl Into<PathBuf>,
     required: bool,
     initial_status: Option<String>,
 ) -> Result<SetupOutcome, Box<dyn std::error::Error>> {
     let mut screen = SetupScreen::from_existing(config_path, required, initial_status);
-    screen.run(terminal)
+    screen.run(terminal, events)
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {

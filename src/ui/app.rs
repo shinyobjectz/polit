@@ -1,5 +1,7 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::backend::Backend;
 use ratatui::prelude::*;
+use ratatui::Terminal;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use super::chat::ChatStream;
@@ -70,7 +72,7 @@ impl App {
 
     pub fn run(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         while !self.should_quit {
             self.process_game_messages();
@@ -116,7 +118,7 @@ impl App {
 
     fn draw(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Pre-compute
         let week = self.week;

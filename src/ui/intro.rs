@@ -1,5 +1,7 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::backend::Backend;
 use ratatui::prelude::*;
+use ratatui::Terminal;
 use ratatui::widgets::{Block, Paragraph};
 use serde::Deserialize;
 use std::time::{Duration, Instant};
@@ -57,7 +59,7 @@ impl IntroScreen {
     /// Run the intro sequence. Returns true if completed, false if skipped.
     pub fn run(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
         music: &MusicController,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         if self.slides.is_empty() {

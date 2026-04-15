@@ -1,6 +1,10 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::backend::Backend;
 use ratatui::prelude::*;
+use ratatui::Terminal;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+
+use crate::devtools::harness::EventSource;
 
 use super::music::MusicController;
 use super::theme;
@@ -43,15 +47,16 @@ impl TitleScreen {
 
     pub fn run(
         &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
+        terminal: &mut Terminal<impl Backend>,
         music: &MusicController,
+        events: &mut impl EventSource,
     ) -> Result<TitleAction, Box<dyn std::error::Error>> {
         loop {
             self.frame_count += 1;
             terminal.draw(|frame| self.render(frame, music))?;
 
-            if event::poll(std::time::Duration::from_millis(50))? {
-                if let Event::Key(key) = event::read()? {
+            if events.poll(std::time::Duration::from_millis(50))? {
+                if let Event::Key(key) = events.read()? {
                     if key.kind != KeyEventKind::Press {
                         continue;
                     }
@@ -78,9 +83,7 @@ impl TitleScreen {
                         KeyCode::Char('q') | KeyCode::Esc => {
                             return Ok(TitleAction::Quit);
                         }
-                        KeyCode::Char('c')
-                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
-                        {
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             return Ok(TitleAction::Quit);
                         }
                         _ => {}
