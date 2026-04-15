@@ -21,6 +21,11 @@ pub struct PtyRunner {
     binary_path: PathBuf,
 }
 
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(2);
+const STEP_TIMEOUT: Duration = Duration::from_secs(2);
+const INPUT_SETTLE_TIMEOUT: Duration = Duration::from_millis(750);
+const QUIET_WINDOW: Duration = Duration::from_millis(100);
+
 impl PtyRunner {
     pub fn new(binary_path: impl Into<PathBuf>) -> Self {
         Self {
@@ -86,36 +91,27 @@ impl PtyRunner {
         let mut parser = vt100::Parser::new(scenario.terminal.height, scenario.terminal.width, 0);
         let mut snapshots = HashMap::new();
 
-        drain_output(&rx, &mut parser, Duration::from_millis(400));
+        settle_screen(&rx, &mut parser, STARTUP_TIMEOUT);
 
         for step in &scenario.steps {
             match step {
                 ScenarioStep::Press { press } => {
                     writer.write_all(&press_bytes(press)?)?;
                     writer.flush()?;
-                    std::thread::sleep(Duration::from_millis(60));
-                    drain_output(&rx, &mut parser, Duration::from_millis(250));
+                    settle_screen(&rx, &mut parser, INPUT_SETTLE_TIMEOUT);
                 }
                 ScenarioStep::Type { type_text } => {
                     for ch in type_text.chars() {
                         writer.write_all(&type_bytes(ch))?;
                         writer.flush()?;
-                        std::thread::sleep(Duration::from_millis(20));
-                        drain_output(&rx, &mut parser, Duration::from_millis(80));
+                        settle_screen(&rx, &mut parser, INPUT_SETTLE_TIMEOUT);
                     }
                 }
                 ScenarioStep::AssertText { assert_text } => {
-                    drain_output(&rx, &mut parser, Duration::from_millis(250));
-                    let lines = screen_lines(&parser);
-                    if !lines.iter().any(|line| line.contains(assert_text)) {
-                        return Err(format!(
-                            "expected text '{assert_text}' not found in PTY screen"
-                        )
-                        .into());
-                    }
+                    wait_for_text(&rx, &mut parser, assert_text, STEP_TIMEOUT)?;
                 }
                 ScenarioStep::AssertNotText { assert_not_text } => {
-                    drain_output(&rx, &mut parser, Duration::from_millis(250));
+                    settle_screen(&rx, &mut parser, STEP_TIMEOUT);
                     let lines = screen_lines(&parser);
                     if lines.iter().any(|line| line.contains(assert_not_text)) {
                         return Err(format!(
@@ -125,14 +121,18 @@ impl PtyRunner {
                     }
                 }
                 ScenarioStep::Snapshot { snapshot } => {
-                    drain_output(&rx, &mut parser, Duration::from_millis(250));
+                    settle_screen(&rx, &mut parser, STEP_TIMEOUT);
                     snapshots.insert(snapshot.clone(), screen_lines(&parser));
                 }
             }
         }
 
-        let _running = wait_for_child_state(child.as_mut(), scenario.expect.running)?;
-        drain_output(&rx, &mut parser, Duration::from_millis(200));
+        let _running = wait_for_child_state(
+            child.as_mut(),
+            scenario.expect.running,
+            allows_non_success_exit(&scenario.steps),
+        )?;
+        settle_screen(&rx, &mut parser, QUIET_WINDOW);
 
         validate_expected_files(env.home_path(), &scenario.expect.files)?;
 
@@ -146,13 +146,21 @@ impl PtyRunner {
 fn wait_for_child_state(
     child: &mut dyn portable_pty::Child,
     expect_running: bool,
+    allow_non_success_exit: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let deadline = Instant::now() + Duration::from_secs(2);
 
     loop {
-        if let Some(_status) = child.try_wait()? {
+        if let Some(status) = child.try_wait()? {
             if expect_running {
                 return Err("pty runner expected process to still be running".into());
+            }
+            if !status.success() && !allow_non_success_exit {
+                return Err(format!(
+                    "pty runner saw non-success exit status {}",
+                    status.exit_code()
+                )
+                .into());
             }
             return Ok(false);
         }
@@ -167,12 +175,48 @@ fn wait_for_child_state(
             return Err("pty runner expected process to exit but it was still running".into());
         }
 
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(QUIET_WINDOW);
     }
 }
 
-fn drain_output(receiver: &mpsc::Receiver<Vec<u8>>, parser: &mut vt100::Parser, window: Duration) {
-    let deadline = Instant::now() + window;
+fn wait_for_text(
+    receiver: &mpsc::Receiver<Vec<u8>>,
+    parser: &mut vt100::Parser,
+    expected: &str,
+    timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if screen_lines(parser)
+            .iter()
+            .any(|line| line.contains(expected))
+        {
+            return Ok(());
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!("expected text '{expected}' not found in PTY screen").into());
+        }
+
+        let wait = remaining.min(QUIET_WINDOW);
+        match receiver.recv_timeout(wait) {
+            Ok(chunk) => parser.process(&chunk),
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(format!(
+                    "pty output disconnected before text '{expected}' appeared"
+                )
+                .into())
+            }
+        }
+    }
+}
+
+fn settle_screen(receiver: &mpsc::Receiver<Vec<u8>>, parser: &mut vt100::Parser, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    let mut saw_output = false;
 
     loop {
         let timeout = deadline.saturating_duration_since(Instant::now());
@@ -180,9 +224,13 @@ fn drain_output(receiver: &mpsc::Receiver<Vec<u8>>, parser: &mut vt100::Parser, 
             break;
         }
 
-        match receiver.recv_timeout(timeout) {
-            Ok(chunk) => parser.process(&chunk),
-            Err(mpsc::RecvTimeoutError::Timeout) => break,
+        match receiver.recv_timeout(timeout.min(QUIET_WINDOW)) {
+            Ok(chunk) => {
+                parser.process(&chunk);
+                saw_output = true;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) if saw_output => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
@@ -223,6 +271,16 @@ fn type_bytes(ch: char) -> Vec<u8> {
         '\t' => vec![b'\t'],
         c => c.to_string().into_bytes(),
     }
+}
+
+fn allows_non_success_exit(steps: &[ScenarioStep]) -> bool {
+    steps.iter().any(|step| {
+        matches!(
+            step,
+            ScenarioStep::Press { press }
+                if matches!(press.trim().to_ascii_lowercase().as_str(), "ctrl-c" | "control-c")
+        )
+    })
 }
 
 fn apply_seed_files(
